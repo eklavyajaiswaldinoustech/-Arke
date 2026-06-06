@@ -16,6 +16,8 @@ const THEME = {
   error: "#d97070",
 };
 
+const API_BASE = "http://localhost:5050/api";
+
 export default function Bankdetails() {
   const { user } = useStore();
   const [bankData, setBankData] = useState(null);
@@ -36,7 +38,7 @@ export default function Bankdetails() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    if (user) {
+    if (user?._id || user?.id) {
       fetchBankdetails();
     } else {
       setLoading(false);
@@ -48,38 +50,61 @@ export default function Bankdetails() {
   const fetchBankdetails = async () => {
     setLoading(true);
     try {
+      const userId = user._id || user.id;
       const response = await fetch(
-        `http://localhost:5050/api/bank-details/${user.id}`,
+        `${API_BASE}/bank-details/${userId}`,
         {
           method: "GET",
           headers: {
             Authorization: `Bearer ${localStorage.getItem("arke_token")}`,
             "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "true",
           },
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      const data = await response.json();
+
+      if (response.ok && data.data) {
+        // Bank details exist
         setBankData(data.data);
-        if (data.data) {
-          setFormData({
-            accountHolderName: data.data.accountHolderName || "",
-            bankName: data.data.bankName || "",
-            accountNumber: "",
-            confirmAccountNumber: "",
-            ifscCode: data.data.ifscCode || "",
-            accountType: data.data.accountType || "savings",
-          });
-        }
-      } else if (response.status === 404) {
+        setFormData({
+          accountHolderName: data.data.accountHolderName || "",
+          bankName: data.data.bankName || "",
+          accountNumber: "",
+          confirmAccountNumber: "",
+          ifscCode: data.data.ifscCode || "",
+          accountType: data.data.accountType || "savings",
+        });
+        setMessage("");
+      } else if (response.status === 404 || data.message === "Bank details not found") {
+        // No bank details yet - this is normal, user can add them
         setBankData(null);
+        setFormData({
+          accountHolderName: "",
+          bankName: "",
+          accountNumber: "",
+          confirmAccountNumber: "",
+          ifscCode: "",
+          accountType: "savings",
+        });
+        setMessage("");
+      } else {
+        // Other errors
+        setBankData(null);
+        setFormData({
+          accountHolderName: "",
+          bankName: "",
+          accountNumber: "",
+          confirmAccountNumber: "",
+          ifscCode: "",
+          accountType: "savings",
+        });
+        setMessage("");
       }
     } catch (error) {
       console.error("Fetch error:", error);
-      setMessage("Failed to load bank details");
-      setMessageType("error");
+      setBankData(null);
+      setMessage("");
     } finally {
       setLoading(false);
     }
@@ -104,6 +129,12 @@ export default function Bankdetails() {
       return false;
     }
 
+    if (formData.accountNumber.length > 16) {
+      setMessage("Account number cannot exceed 16 digits");
+      setMessageType("error");
+      return false;
+    }
+
     if (formData.accountNumber !== formData.confirmAccountNumber) {
       setMessage("Account numbers do not match");
       setMessageType("error");
@@ -123,7 +154,7 @@ export default function Bankdetails() {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: name === "ifscCode" ? value.toUpperCase() : value,
     }));
     setMessage("");
   };
@@ -136,16 +167,14 @@ export default function Bankdetails() {
     setSaving(true);
     try {
       const response = await fetch(
-        `http://localhost:5050/api/bank-details`,
+        `${API_BASE}/bank-details`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${localStorage.getItem("arke_token")}`,
             "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "true",
           },
           body: JSON.stringify({
-            userId: user.id,
             accountHolderName: formData.accountHolderName,
             bankName: formData.bankName,
             accountNumber: formData.accountNumber,
@@ -200,11 +229,13 @@ export default function Bankdetails() {
   ];
 
   return (
-    <div style={{
-      background: THEME.bg,
-      minHeight: "100vh",
-      paddingTop: 120,
-    }}>
+    <div
+      style={{
+        background: THEME.bg,
+        minHeight: "100vh",
+        paddingTop: 120,
+      }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;600&display=swap');
 
@@ -564,7 +595,8 @@ export default function Bankdetails() {
         <div className="security-notice">
           <div className="security-notice-icon">🔒</div>
           <div className="security-notice-text">
-            Your bank details are encrypted with industry-standard security. We never share your information.
+            Your bank details are encrypted with industry-standard AES-256 encryption. 
+            We never share your information.
           </div>
         </div>
 
@@ -591,7 +623,10 @@ export default function Bankdetails() {
               <div className="bank-card">
                 <div className="card-header">
                   <div className="card-title">✓ Account Details</div>
-                  <button className="edit-btn" onClick={() => setIsEditing(true)}>
+                  <button
+                    className="edit-btn"
+                    onClick={() => setIsEditing(true)}
+                  >
                     Edit Details
                   </button>
                 </div>
@@ -599,7 +634,9 @@ export default function Bankdetails() {
                 <div className="bank-info">
                   <div className="info-field">
                     <div className="info-label">Account Holder Name</div>
-                    <div className="info-value">{bankData.accountHolderName}</div>
+                    <div className="info-value">
+                      {bankData.accountHolderName}
+                    </div>
                   </div>
 
                   <div className="info-field">
@@ -609,12 +646,17 @@ export default function Bankdetails() {
 
                   <div className="info-field">
                     <div className="info-label">Account Number</div>
-                    <div className="info-value">{maskAccountNumber(bankData.accountNumber)}</div>
+                    <div className="info-value">
+                      {maskAccountNumber(bankData.accountNumber)}
+                    </div>
                   </div>
 
                   <div className="info-field">
                     <div className="info-label">Account Type</div>
-                    <div className="info-value">{bankData.accountType?.charAt(0).toUpperCase() + bankData.accountType?.slice(1)}</div>
+                    <div className="info-value">
+                      {bankData.accountType?.charAt(0).toUpperCase() +
+                        bankData.accountType?.slice(1)}
+                    </div>
                   </div>
 
                   <div className="info-field">
@@ -625,11 +667,14 @@ export default function Bankdetails() {
                   <div className="info-field">
                     <div className="info-label">Last Updated</div>
                     <div className="info-value">
-                      {new Date(bankData.updatedAt).toLocaleDateString("en-IN", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {new Date(bankData.updatedAt).toLocaleDateString(
+                        "en-IN",
+                        {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        }
+                      )}
                     </div>
                   </div>
                 </div>
@@ -643,7 +688,9 @@ export default function Bankdetails() {
 
                 <form onSubmit={handleSubmit}>
                   <div className="form-group">
-                    <label className="form-label">Account Holder Name *</label>
+                    <label className="form-label">
+                      Account Holder Name *
+                    </label>
                     <input
                       type="text"
                       name="accountHolderName"
@@ -675,7 +722,9 @@ export default function Bankdetails() {
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label">Account Number *</label>
+                      <label className="form-label">
+                        Account Number *
+                      </label>
                       <input
                         type="password"
                         name="accountNumber"
@@ -686,11 +735,14 @@ export default function Bankdetails() {
                         minLength="9"
                         maxLength="16"
                         required
+                        inputMode="numeric"
                       />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label">Confirm Account Number *</label>
+                      <label className="form-label">
+                        Confirm Account Number *
+                      </label>
                       <input
                         type="password"
                         name="confirmAccountNumber"
@@ -701,6 +753,7 @@ export default function Bankdetails() {
                         minLength="9"
                         maxLength="16"
                         required
+                        inputMode="numeric"
                       />
                     </div>
                   </div>
@@ -714,15 +767,7 @@ export default function Bankdetails() {
                         className="form-input"
                         placeholder="e.g., SBIN0001234"
                         value={formData.ifscCode}
-                        onChange={(e) =>
-                          handleChange({
-                            ...e,
-                            target: {
-                              ...e.target,
-                              value: e.target.value.toUpperCase(),
-                            },
-                          })
-                        }
+                        onChange={handleChange}
                         maxLength="11"
                         required
                       />

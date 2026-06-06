@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useStore } from "../context/useStore";
+import { useCart } from "../context/CartContext";
+import { useWishlist } from "../context/WishlistContext";
 import { AiOutlineHeart, AiOutlineShoppingCart } from "react-icons/ai";
 
 // ── Pretty · Classy · Premium · Feminine Theme ─────────────────────────
@@ -28,7 +30,7 @@ const THEME = {
   him: "#7a95a8",
 };
 
-/* ── Global Styles ─────────────────────────────────────────────────────── */
+/* ── Enhanced Global Styles with Unique Animations ─────────────────────── */
 const GLOBAL_STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;1,400&display=swap');
 
@@ -38,26 +40,105 @@ const GLOBAL_STYLES = `
     0% { transform: translateX(0); }
     100% { transform: translateX(-50%); }
   }
+
   @keyframes slideDown {
     from { transform: translateY(-100%); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
   }
+
   @keyframes slideDownDrop {
     from { opacity: 0; transform: translateY(-10px) scale(0.98); }
     to { opacity: 1; transform: translateY(0) scale(1); }
   }
+
   @keyframes shimmer {
     0% { background-position: -200% center; }
     100% { background-position: 200% center; }
   }
+
   @keyframes pulseGlow {
     0%, 100% { box-shadow: 0 0 12px rgba(201,137,122,0.2); }
     50% { box-shadow: 0 0 24px rgba(201,137,122,0.45); }
   }
+
   @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(16px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  /* ═══════════════════ UNIQUE ANIMATIONS ═══════════════════ */
+
+  /* Floating Background Orbs */
+  @keyframes floatOrb1 {
+    0%, 100% { transform: translate(0px, 0px); }
+    25% { transform: translate(20px, -15px); }
+    50% { transform: translate(0px, 20px); }
+    75% { transform: translate(-25px, -10px); }
+  }
+
+  @keyframes floatOrb2 {
+    0%, 100% { transform: translate(0px, 0px); }
+    33% { transform: translate(-15px, 25px); }
+    66% { transform: translate(20px, -20px); }
+  }
+
+  /* Elegant Link Underline with Wave Effect */
+  @keyframes waveUnderline {
+    0% { transform: scaleX(0) skewX(-20deg); }
+    50% { transform: scaleX(1.1) skewX(5deg); }
+    100% { transform: scaleX(1) skewX(0deg); }
+  }
+
+  /* Glow Pulse */
+  @keyframes glowPulse {
+    0%, 100% { 
+      box-shadow: 0 0 10px rgba(201,137,122,0.3),
+                  inset 0 0 15px rgba(201,137,122,0.1);
+    }
+    50% { 
+      box-shadow: 0 0 20px rgba(201,137,122,0.5),
+                  inset 0 0 25px rgba(201,137,122,0.2);
+    }
+  }
+
+  /* Shimmer Text Effect */
+  @keyframes shimmerText {
+    0% { background-position: -1000% 0; }
+    100% { background-position: 1000% 0; }
+  }
+
+  /* Icon Bounce */
+  @keyframes iconBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  /* Navbar sliding scale effect */
+  @keyframes navSlideScale {
+    from { transform: scaleY(0); opacity: 0; transform-origin: top; }
+    to { transform: scaleY(1); opacity: 1; }
+  }
+
+  /* Staggered letter animation for logo */
+  @keyframes letterFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+
+  /* Rotating glow background */
+  @keyframes rotatingGlow {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Link hover magnetic effect */
+  @keyframes magneticPull {
+    0% { transform: translate(0, 0); }
+    50% { transform: translate(2px, -1px); }
+    100% { transform: translate(0, 0); }
+  }
+
+  /* ═══════════════════ STYLE APPLICATIONS ═══════════════════ */
 
   .ann-marquee-track {
     display: flex;
@@ -67,7 +148,7 @@ const GLOBAL_STYLES = `
   .ann-marquee-track:hover { animation-play-state: paused; }
   .ann-sep { margin: 0 28px; color: rgba(201,137,122,0.3); }
 
-  /* ── Navbar transition — smooth bg on scroll ── */
+  /* Navbar transition — smooth bg on scroll */
   .arke-navbar {
     transition:
       height 0.4s cubic-bezier(0.4,0,0.2,1),
@@ -76,7 +157,9 @@ const GLOBAL_STYLES = `
       -webkit-backdrop-filter 0.5s ease,
       border-color 0.5s ease,
       box-shadow 0.5s ease;
+    animation: navSlideScale 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
+
   .arke-navbar.is-transparent {
     background: transparent !important;
     backdrop-filter: none !important;
@@ -84,6 +167,7 @@ const GLOBAL_STYLES = `
     border-bottom-color: transparent !important;
     box-shadow: none !important;
   }
+
   .arke-navbar.is-solid {
     background: rgba(13,8,16,0.95) !important;
     backdrop-filter: blur(32px) !important;
@@ -92,7 +176,7 @@ const GLOBAL_STYLES = `
     box-shadow: 0 4px 40px rgba(0,0,0,0.5) !important;
   }
 
-  /* Shimmer line fade */
+  /* Shimmer line fade with floating motion */
   .arke-shimmer-line {
     position: absolute;
     top: 0; left: 0; right: 0;
@@ -100,9 +184,10 @@ const GLOBAL_STYLES = `
     background: linear-gradient(90deg, transparent, rgba(201,137,122,0.28), transparent);
     pointer-events: none;
     transition: opacity 0.5s ease;
+    animation: floatOrb1 6s ease-in-out infinite;
   }
 
-  /* Nav link */
+  /* Nav link with enhanced animations */
   .arke-nav-link {
     position: relative;
     text-decoration: none;
@@ -113,22 +198,31 @@ const GLOBAL_STYLES = `
     font-weight: 500;
     transition: color 0.3s cubic-bezier(0.4,0,0.2,1);
     padding-bottom: 2px;
+    overflow: hidden;
   }
+
   .arke-nav-link::after {
     content: '';
     position: absolute;
     bottom: -4px;
     left: 50%;
     right: 50%;
-    height: 1px;
+    height: 2px;
     background: linear-gradient(90deg, transparent, #c9897a, transparent);
     transition: left 0.4s cubic-bezier(0.4,0,0.2,1),
                 right 0.4s cubic-bezier(0.4,0,0.2,1);
+    filter: drop-shadow(0 0 6px rgba(201,137,122,0.4));
   }
+
   .arke-nav-link:hover::after,
   .arke-nav-link.active::after {
     left: 0;
     right: 0;
+    animation: waveUnderline 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .arke-nav-link:hover {
+    animation: magneticPull 0.4s ease;
   }
 
   .nav-gift-her { color: #c4909e !important; }
@@ -140,16 +234,18 @@ const GLOBAL_STYLES = `
     color: rgba(248,242,238,0.65);
     display: flex;
     align-items: center;
-    transition: all 0.3s;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     padding: 8px;
     position: relative;
     cursor: pointer;
     text-decoration: none;
     border-radius: 50%;
   }
+
   .nav-icon-btn:hover {
     color: #c9897a;
     background: rgba(201,137,122,0.08);
+    animation: iconBounce 0.6s ease;
   }
 
   .arke-nav-links {
@@ -160,6 +256,7 @@ const GLOBAL_STYLES = `
     margin: 0;
     padding: 0;
   }
+
   .arke-hamburger { display: none !important; }
 
   @media (max-width: 1024px) {
@@ -169,6 +266,19 @@ const GLOBAL_STYLES = `
 
   .account-dropdown-menu {
     animation: slideDownDrop 0.28s cubic-bezier(0.4,0,0.2,1) forwards;
+    border-left: 2px solid rgba(201,137,122,0.3);
+    position: relative;
+  }
+
+  .account-dropdown-menu::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(201,137,122,0.4), transparent);
+    animation: shimmer 2s ease-in-out infinite;
   }
 
   .account-btn-circle {
@@ -193,6 +303,7 @@ const GLOBAL_STYLES = `
     outline: none;
     padding: 0;
   }
+
   .account-btn-circle:hover {
     border-color: #c9897a;
     background: linear-gradient(135deg,
@@ -201,7 +312,9 @@ const GLOBAL_STYLES = `
     );
     box-shadow: 0 0 20px rgba(201,137,122,0.25),
                 inset 0 1px 0 rgba(255,255,255,0.06);
+    animation: glowPulse 1.5s ease-in-out;
   }
+
   .account-btn-circle.active {
     border-color: #c9897a;
     background: linear-gradient(135deg,
@@ -209,39 +322,67 @@ const GLOBAL_STYLES = `
       rgba(196,144,158,0.18) 100%
     );
     box-shadow: 0 0 28px rgba(201,137,122,0.35);
+    animation: glowPulse 1.2s ease-in-out infinite;
   }
 
   .account-menu-item {
     position: relative;
     overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
+
   .account-menu-item::before {
     content: '';
     position: absolute;
     left: 0; top: 0; bottom: 0;
-    width: 2px;
+    width: 3px;
     background: linear-gradient(to bottom, #c9897a, #c4909e);
     transform: scaleY(0);
     transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
     transform-origin: top;
+    filter: drop-shadow(0 0 8px rgba(201,137,122,0.4));
   }
-  .account-menu-item:hover::before { transform: scaleY(1); }
+
+  .account-menu-item:hover::before { 
+    transform: scaleY(1);
+    animation: floatOrb2 0.5s ease-out;
+  }
 
   .badge-pulse {
     animation: pulseGlow 2s ease-in-out infinite;
   }
 
   .mobile-nav-link {
-    transition: color 0.3s ease, letter-spacing 0.3s ease !important;
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  /* Logo animations */
+  .logo-char {
+    display: inline-block;
+    animation: letterFloat 3s ease-in-out infinite;
+  }
+
+  .logo-char:nth-child(2) {
+    animation-delay: 0.2s;
   }
 `;
 
 /* ── Petal Divider ───────────────────────────────────────────────────── */
 const PetalDivider = ({ color = "rgba(201,137,122,0.25)", width = 80 }) => (
   <div style={{ display: "flex", alignItems: "center", gap: 8, width }}>
-    <div style={{ flex: 1, height: "0.5px", background: color }} />
+    <div style={{ 
+      flex: 1, 
+      height: "0.5px", 
+      background: color,
+      animation: "shimmer 3s ease-in-out infinite"
+    }} />
     <span style={{ color, fontSize: 8, opacity: 0.8 }}>✦</span>
-    <div style={{ flex: 1, height: "0.5px", background: color }} />
+    <div style={{ 
+      flex: 1, 
+      height: "0.5px", 
+      background: color,
+      animation: "shimmer 3s ease-in-out infinite 0.5s"
+    }} />
   </div>
 );
 
@@ -331,7 +472,7 @@ function AnnouncementBanner({ onHeightChange }) {
           borderRight: "1px solid rgba(201,137,122,0.08)",
         }}
       >
-        <span style={{ fontSize: 9, color: textColor, opacity: 0.5 }}>✦</span>
+        <span style={{ fontSize: 9, color: textColor, opacity: 0.5, animation: "letterFloat 2s ease-in-out infinite" }}>✦</span>
       </div>
 
       {/* Scrolling text */}
@@ -510,6 +651,7 @@ function AccountDropdown({ user }) {
                 marginTop: -6,
                 marginLeft: -18,
                 marginRight: -18,
+                animation: "shimmer 2s ease-in-out infinite",
               }}
             />
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -529,6 +671,7 @@ function AccountDropdown({ user }) {
                   boxShadow: `0 4px 20px rgba(201,137,122,0.35),
                               inset 0 1px 0 rgba(255,255,255,0.2)`,
                   flexShrink: 0,
+                  animation: "glowPulse 2s ease-in-out infinite",
                 }}
               >
                 {userInitial}
@@ -643,6 +786,7 @@ function AccountDropdown({ user }) {
                         borderRadius: "50%",
                         background: THEME.roseGold,
                         flexShrink: 0,
+                        animation: "pulseGlow 1.5s ease-in-out infinite"
                       }}
                     />
                   ) : (
@@ -670,6 +814,7 @@ function AccountDropdown({ user }) {
                 height: "0.5px",
                 background:
                   "linear-gradient(90deg, transparent, rgba(201,137,122,0.2), transparent)",
+                animation: "shimmer 2.5s ease-in-out infinite"
               }}
             />
           </div>
@@ -750,31 +895,32 @@ const ACCOUNT_MENU = [
 
 /* ── Main Navbar ─────────────────────────────────────────────────────── */
 export default function Navbar({ onLoginClick }) {
-  const { user, logout, cartCount, wishCount } = useStore();
+  const { user, logout } = useStore();
+  const { cartCount } = useCart();
+  const { wishlistCount } = useWishlist();
+  const displayCartCount = cartCount > 99 ? "99+" : cartCount;
+  const displayWishCount = wishlistCount > 99 ? "99+" : wishlistCount;
   const [scrolled,  setScrolled]  = useState(false);
   const [menuOpen,  setMenuOpen]  = useState(false);
   const [annHeight, setAnnHeight] = useState(38);
   const location  = useLocation();
   const isHome    = location.pathname === "/";
 
-  // ── THE FIX: check scroll immediately on mount + on every route change ──
   useEffect(() => {
     const checkScroll = () => {
       setScrolled(window.scrollY > 50);
     };
 
-    // Run immediately so state is correct on first render
     checkScroll();
 
     window.addEventListener("scroll", checkScroll, { passive: true });
     return () => window.removeEventListener("scroll", checkScroll);
-  }, [location.pathname]); // re-run when route changes too
+  }, [location.pathname]);
 
   useEffect(() => {
     setMenuOpen(false);
   }, [location]);
 
-  // transparent ONLY when on homepage AND not scrolled
   const isTransparent = isHome && !scrolled;
 
   return (
@@ -800,7 +946,6 @@ export default function Navbar({ onLoginClick }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          // base border so layout never shifts
           borderBottom: "1px solid transparent",
         }}
       >
@@ -821,6 +966,7 @@ export default function Navbar({ onLoginClick }) {
           }}
         >
           <span
+            className="logo-char"
             style={{
               fontFamily: "'Cormorant Garamond', serif",
               fontSize: scrolled ? 24 : 28,
@@ -834,6 +980,7 @@ export default function Navbar({ onLoginClick }) {
             Ark
           </span>
           <span
+            className="logo-char"
             style={{
               fontFamily: "'Cormorant Garamond', serif",
               fontSize: scrolled ? 24 : 28,
@@ -853,7 +1000,7 @@ export default function Navbar({ onLoginClick }) {
 
         {/* ── NAV LINKS ── */}
         <ul className="arke-nav-links">
-          {NAV_LINKS.map((l) => {
+          {NAV_LINKS.map((l, idx) => {
             const isActive  = location.pathname === l.to;
             const isGiftHer = l.to === "/gift-for-her";
             const isGiftHim = l.to === "/gift-for-him";
@@ -867,7 +1014,9 @@ export default function Navbar({ onLoginClick }) {
               : "rgba(248,242,238,0.55)";
 
             return (
-              <li key={l.to}>
+              <li key={l.to} style={{
+                animation: `fadeInUp 0.5s ease ${idx * 50}ms both`
+              }}>
                 <Link
                   to={l.to}
                   className={`arke-nav-link${isActive  ? " active"       : ""}${isGiftHer ? " nav-gift-her" : ""}${isGiftHim ? " nav-gift-him" : ""}`}
@@ -903,7 +1052,7 @@ export default function Navbar({ onLoginClick }) {
           {/* Wishlist */}
           <Link to="/wishlist" className="nav-icon-btn">
             <AiOutlineHeart size={19} />
-            {wishCount > 0 && (
+            {wishlistCount > 0 && (
               <span
                 className="badge-pulse"
                 style={{
@@ -922,7 +1071,7 @@ export default function Navbar({ onLoginClick }) {
                   boxShadow: "0 2px 8px rgba(201,137,122,0.5)",
                 }}
               >
-                {wishCount}
+                {displayWishCount}
               </span>
             )}
           </Link>
@@ -949,7 +1098,7 @@ export default function Navbar({ onLoginClick }) {
                   boxShadow: "0 2px 8px rgba(201,137,122,0.5)",
                 }}
               >
-                {cartCount}
+                {displayCartCount}
               </span>
             )}
           </Link>
@@ -961,6 +1110,7 @@ export default function Navbar({ onLoginClick }) {
               height: 18,
               background: "rgba(201,137,122,0.2)",
               margin: "0 6px",
+              animation: "floatOrb1 4s ease-in-out infinite"
             }}
           />
 
@@ -1039,6 +1189,7 @@ export default function Navbar({ onLoginClick }) {
               "radial-gradient(circle, rgba(201,137,122,0.04) 0%, transparent 70%)",
             top: "10%", right: "-10%",
             pointerEvents: "none",
+            animation: "floatOrb1 8s ease-in-out infinite"
           }}
         />
         <div
@@ -1050,6 +1201,7 @@ export default function Navbar({ onLoginClick }) {
               "radial-gradient(circle, rgba(196,144,158,0.04) 0%, transparent 70%)",
             bottom: "15%", left: "-5%",
             pointerEvents: "none",
+            animation: "floatOrb2 10s ease-in-out infinite"
           }}
         />
 

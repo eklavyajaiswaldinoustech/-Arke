@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { imgUrl, api } from "../services/api";
+import { getProductImage } from "../services/api";
 import { useCart } from "../context/CartContext";
+import { useWishlist } from "../context/WishlistContext";
 import { useToast } from "../context/ToastProvider";
+
 
 const THEME = {
   bg: "#faf8f5",
@@ -20,70 +22,26 @@ const THEME = {
   borderLight: "#f0ebe5",
 };
 
-// ── Debug: log first product image shape once ──────────────────────
-let debugged = false;
-function debugImage(product) {
-  if (debugged) return;
-  debugged = true;
-  console.log("🔍 Product image debug:", {
-    "product.images": product?.images,
-    "product.image": product?.image,
-    "product.thumbnail": product?.thumbnail,
-    "product.imageUrl": product?.imageUrl,
-    "product.img": product?.img,
-    "full product keys": Object.keys(product || {}),
-  });
-}
-
-// ── Resolve best image from product ───────────────────────────────
-function getProductImg(product, index = 0) {
-  if (Array.isArray(product?.image)) {
-    const val = product.image[index];
-    const resolved = imgUrl(val);
-    if (resolved) return resolved;
-  }
-  for (const key of ["images", "imageUrl", "img", "photos", "gallery"]) {
-    if (Array.isArray(product?.[key]) && product[key].length > index) {
-      const resolved = imgUrl(product[key][index]);
-      if (resolved) return resolved;
-    }
-  }
-  if (index === 0) {
-    for (const key of [
-      "image",
-      "imageUrl",
-      "img",
-      "thumbnail",
-      "photo",
-      "picture",
-    ]) {
-      if (product?.[key] && !Array.isArray(product[key])) {
-        const resolved = imgUrl(product[key]);
-        if (resolved) return resolved;
-      }
-    }
-  }
-  return null;
-}
-
 // ── Product Card Component ────────────────────────────────────────────
 export default function ProductCard({ product }) {
   const navigate = useNavigate();
   const { addToCart } = useCart();
+  const { toggleWishlist, isInWishlist } = useWishlist();
   const { success, error: showError } = useToast();
 
   const [hovered, setHovered] = useState(false);
   const [cartState, setCartState] = useState("idle"); // "idle" | "loading" | "added" | "error"
   const [imgError, setImgError] = useState(false);
-  const [wishActive, setWishActive] = useState(false);
-
-  debugImage(product);
+  const [wishLoading, setWishLoading] = useState(false);
+  
+  // Check if product is in wishlist
+  const inWishlist = isInWishlist(product?._id || product?.id);
 
   const name = product?.name || product?.title || "Product";
   const price = product?.price || product?.salePrice || product?.mrp || 0;
   const originalPrice = product?.mrp || product?.originalPrice;
-  const img1 = getProductImg(product, 0);
-  const img2 = getProductImg(product, 1);
+  const img1 = getProductImage(product, 0);
+  const img2 = getProductImage(product, 1);
   const id = product?._id || product?.id;
 
   // Calculate discount percentage
@@ -106,26 +64,15 @@ export default function ProductCard({ product }) {
     setCartState("loading");
 
     try {
-      // Send full product details along with the request
-      const productDetails = {
-        name: product?.name || product?.title || "Product",
-        price: product?.price || product?.salePrice || product?.mrp || 0,
-        image: img1, // Primary image
-        images: [img1, img2].filter(Boolean), // All images
-        description: product?.description || "",
-        material: product?.material || product?.metalType || "",
-        weight: product?.weight || "",
-        size: product?.size || "",
-        sku: product?.sku || product?.productCode || "",
-        stock: product?.stock || 0,
-      };
-
-      await addToCart(id, 1, productDetails);
+      // Pass the full product object to preserve all details in cart
+      await addToCart(product, 1);
 
       setCartState("added");
+      success("Added to cart!");
       setTimeout(() => setCartState("idle"), 2500);
     } catch (err) {
       console.error("❌ Add to cart error:", err);
+      showError(err.message || "Failed to add to cart");
       setCartState("error");
       setTimeout(() => setCartState("idle"), 2500);
     }
@@ -136,17 +83,22 @@ export default function ProductCard({ product }) {
     e.stopPropagation();
 
     if (!localStorage.getItem("arke_token")) {
-      alert("Please login to save items");
+      showError("Please login to save items");
       return;
     }
 
+    if (wishLoading) return;
+    setWishLoading(true);
+
     try {
-      setWishActive(!wishActive);
-      // await api.addToWishlist(id);
-      // refreshWishlist?.();
+      // Pass full product object for better state management
+      await toggleWishlist(product);
+      success(inWishlist ? "Removed from wishlist" : "Added to wishlist");
     } catch (err) {
       console.error("❌ Wishlist error:", err);
-      setWishActive(!wishActive);
+      showError(err.message || "Failed to update wishlist");
+    } finally {
+      setWishLoading(false);
     }
   };
 
@@ -369,48 +321,49 @@ export default function ProductCard({ product }) {
         {/* Wishlist Button */}
         <button
           onClick={handleWish}
-          className={wishActive ? "heart-beat" : ""}
+          disabled={wishLoading}
+          className={inWishlist ? "heart-beat" : ""}
           style={{
             position: "absolute",
             top: 12,
             right: 12,
-            background: wishActive
+            background: inWishlist
               ? `linear-gradient(135deg, ${THEME.rose}, ${THEME.burgundy})`
               : "rgba(250,248,245,0.8)",
             backdropFilter: "blur(12px)",
-            border: wishActive ? "none" : `1.5px solid ${THEME.rose}`,
-            color: wishActive ? "white" : THEME.rose,
+            border: inWishlist ? "none" : `1.5px solid ${THEME.rose}`,
+            color: inWishlist ? "white" : THEME.rose,
             width: 38,
             height: 38,
             borderRadius: "50%",
-            cursor: "pointer",
+            cursor: wishLoading ? "not-allowed" : "pointer",
             fontSize: 16,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            opacity: hovered ? 1 : 0.9,
+            opacity: wishLoading ? 0.6 : (hovered ? 1 : 0.9),
             transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
             zIndex: 2,
-            boxShadow: wishActive
+            boxShadow: inWishlist
               ? `0 4px 12px rgba(232,180,196,0.35)`
               : "none",
           }}
           onMouseEnter={(e) => {
-            if (!wishActive) {
+            if (!inWishlist && !wishLoading) {
               e.target.style.background = `rgba(250,248,245,0.95)`;
               e.target.style.borderColor = THEME.burgundy;
               e.target.style.color = THEME.burgundy;
             }
           }}
           onMouseLeave={(e) => {
-            if (!wishActive) {
+            if (!inWishlist) {
               e.target.style.background = "rgba(250,248,245,0.8)";
               e.target.style.borderColor = THEME.rose;
               e.target.style.color = THEME.rose;
             }
           }}
         >
-          {wishActive ? "♥" : "♡"}
+          {wishLoading ? "..." : (inWishlist ? "♥" : "♡")}
         </button>
       </div>
 

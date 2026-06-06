@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, imgUrl, extract } from "../services/api";
-import { useStore } from "../context/useStore";
+import { useCart } from "../context/CartContext";
+import { useWishlist } from "../context/WishlistContext";
 import ProductCard from "../components/ProductCard";
 
 const THEME = {
@@ -19,7 +20,8 @@ const THEME = {
 export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { refreshCart } = useStore();
+  const { addToCart } = useCart();
+  const { toggleWishlist } = useWishlist();
   const [product, setProduct] = useState(null);
   const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -53,8 +55,7 @@ export default function ProductDetail() {
       alert("Please login first");
       return;
     }
-    await api.addToCart(id, qty);
-    refreshCart();
+    await addToCart(product || id, qty);
     setAdded(true);
     setTimeout(() => setAdded(false), 3000);
   };
@@ -66,7 +67,7 @@ export default function ProductDetail() {
     }
     setAddingToWish(true);
     try {
-      await api.addToWishlist(id);
+      await toggleWishlist(product || id);
     } finally {
       setAddingToWish(false);
     }

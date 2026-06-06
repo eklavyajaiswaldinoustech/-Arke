@@ -38,6 +38,7 @@ export function StoreProvider({ children }) {
       localStorage.setItem("arke_token", token);
       localStorage.setItem("arke_user", JSON.stringify(u));
       setUser(u);
+      window.dispatchEvent(new Event("arke-auth-change"));
       return { ok: true };
     }
     return { ok: false, msg: res?.message || "Login failed" };
@@ -51,6 +52,7 @@ export function StoreProvider({ children }) {
       localStorage.setItem("arke_token", token);
       localStorage.setItem("arke_user", JSON.stringify(u));
       setUser(u);
+      window.dispatchEvent(new Event("arke-auth-change"));
       return { ok: true };
     }
     return { ok: false, msg: res?.message || "Registration failed" };
@@ -62,6 +64,7 @@ export function StoreProvider({ children }) {
     setUser(null);
     setCartCount(0);
     setWishCount(0);
+    window.dispatchEvent(new Event("arke-auth-change"));
   };
 
   const refreshCart = async () => {

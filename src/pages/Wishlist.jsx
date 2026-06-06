@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { imgUrl } from "../services/api";
+import { getProductImage } from "../services/api";
 import { useWishlist } from "../context/WishlistContext";
 import { useCart } from "../context/CartContext";
 import { useToast } from "../context/ToastProvider";
@@ -43,11 +43,11 @@ export default function Wishlist() {
   };
 
   const handleAddToCart = async (product) => {
-    const productId = product._id || product.id;
+    const productId = product._id || product.id || product.productId;
     setAddingToCart((prev) => new Set([...prev, productId]));
 
     try {
-      await addToCart(productId, 1);
+      await addToCart(product, 1);
       success("Added to cart! 🛒");
     } catch (err) {
       showError("Failed to add to cart");
@@ -462,19 +462,12 @@ export default function Wishlist() {
           </div>
         ) : (
           <div className="wl-grid">
-            {items.map((product, idx) => {
-              const productId = product._id || product.id;
+            {items.map((item, idx) => {
+              const product = item.product || item;
+              const productId = product._id || product.id || item.productId || item._id || item.id;
               const isRemoving = removingItems.has(productId);
               const isAdding = addingToCart.has(productId);
-              const img = (() => {
-                if (Array.isArray(product.image))
-                  return imgUrl(product.image[0]);
-                return imgUrl(
-                  product.images?.[0] ||
-                    product.image ||
-                    product.thumbnail
-                );
-              })();
+              const img = getProductImage(product);
               const name = product.name || product.title || "Product";
               const price = Number(product.price || product.salePrice || 0);
 
