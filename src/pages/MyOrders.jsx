@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../context/useStore";
+import { API_BASE } from "../services/api";
 
 const THEME = {
   bg: "#faf8f5",
@@ -40,7 +41,7 @@ export default function MyOrders() {
     setError("");
     try {
       const response = await fetch(
-        `http://localhost:5050/api/orders/${user.id}`,
+        `${API_BASE}/orders/${user.id}`,
         {
           method: "GET",
           headers: {

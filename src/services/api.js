@@ -1,4 +1,5 @@
-const BASE = "http://localhost:5050";
+export const BASE = "https://arke-backend.onrender.com";
+export const API_BASE = `${BASE}/api`;
 
 /* ── Auth headers ─────────────────────────────────────────────────── */
 const headers = () => {

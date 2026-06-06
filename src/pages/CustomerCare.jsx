@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { FaInstagram, FaPinterest, FaWhatsapp, FaEnvelope } from "react-icons/fa";
+import { API_BASE } from "../services/api";
 
 const THEME = {
   bg: "#faf8f5",
@@ -78,7 +79,7 @@ export default function CustomerCare() {
 
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:5050/api/CustomerCare", {
+      const response = await fetch(`${API_BASE}/CustomerCare`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

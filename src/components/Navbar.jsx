@@ -4,6 +4,7 @@ import { useStore } from "../context/useStore";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { AiOutlineHeart, AiOutlineShoppingCart } from "react-icons/ai";
+import { API_BASE } from "../services/api";
 
 // ── Pretty · Classy · Premium · Feminine Theme ─────────────────────────
 const THEME = {
@@ -394,7 +395,7 @@ function AnnouncementBanner({ onHeightChange }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch("http://localhost:5050/api/announcements", {
+        const res = await fetch(`${API_BASE}/announcements`, {
           headers: { "ngrok-skip-browser-warning": "true" },
         });
         if (res.ok) {

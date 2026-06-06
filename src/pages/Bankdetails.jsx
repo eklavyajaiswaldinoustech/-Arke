@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../context/useStore";
+import { API_BASE } from "../services/api";
 
 const THEME = {
   bg: "#faf8f5",
@@ -15,8 +16,6 @@ const THEME = {
   success: "#70c878",
   error: "#d97070",
 };
-
-const API_BASE = "http://localhost:5050/api";
 
 export default function Bankdetails() {
   const { user } = useStore();
