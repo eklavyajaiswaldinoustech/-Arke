@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../context/useStore";
 import { API_BASE } from "../services/api";
+import {useCart} from "../context/CartContext";
 
 const THEME = {
   bg: "#faf8f5",
@@ -40,17 +41,17 @@ export default function MyOrders() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(
-        `${API_BASE}/orders/${user.id}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("arke_token")}`,
-            "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "true",
-          },
-        }
-      );
+    const response = await fetch(
+  `${API_BASE}/orders`,
+  {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("arke_token")}`,
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
+    },
+  }
+);
 
       if (!response.ok) {
         if (response.status === 401) {
