@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { api, imgUrl, extract, getCategoryId, getCategoryImage, getCategoryName } from "../services/api";
 import ProductCard from "../components/ProductCard";
 
@@ -148,6 +148,16 @@ const ENHANCED_ANIMATIONS = `
   }
 `;
 
+/* ── SCROLL TO TOP HOOK ────────────────────────────────────────────── */
+function useScrollToTop() {
+  const location = useLocation();
+
+  useEffect(() => {
+    // Scroll to top immediately on route change
+    window.scrollTo(0, 0);
+  }, [location.pathname]); // Trigger on pathname change
+}
+
 function useReveal() {
   const ref = useRef(null);
   const [visible, setVisible] = useState(false);
@@ -262,7 +272,7 @@ function Hero({ banners }) {
       {/* Left Accent Line */}
       <div style={{ position: "absolute", left: 52, top: "15%", bottom: "15%", width: 1, background: `linear-gradient(to bottom, transparent, rgba(232,180,196,0.55) 30%, rgba(232,180,196,0.55) 70%, transparent)`, zIndex: 2, animation: "floatUp 4s ease-in-out infinite" }} />
 
-      {/* Main Content — key={idx} forces re-mount on banner change, re-triggering all fade animations */}
+      {/* Main Content */}
       <div
         key={idx}
         className="hero-content-wrap"
@@ -707,6 +717,9 @@ function ErrorScreen({ error, onRetry }) {
 }
 
 export default function Homepage() {
+  // ✨ SCROLL TO TOP FIX - Triggers on any navigation back to homepage
+  useScrollToTop();
+
   const [data, setData] = useState({ banners: [], cats: [], latest: [], best: [], allProducts: [], blogs: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
