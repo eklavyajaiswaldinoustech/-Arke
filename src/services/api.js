@@ -1,4 +1,4 @@
-export const BASE = "https://arke-backend.onrender.com";
+export const BASE = "http://localhost:5050";
 export const API_BASE = `${BASE}/api`;
 
 /* ── Auth headers ─────────────────────────────────────────────────── */
@@ -146,6 +146,7 @@ export const api = {
 
   // ── Orders ─────────────────────────────────────────────────────
   placeOrder: (data) => post("/api/place-order", data),
+  
 
   // ── Announcements ──────────────────────────────────────────────
   getAnnouncements:   ()         => get("/api/announcements"),

@@ -27,6 +27,128 @@ const CHECKOUT_STEPS = [
   { id: 3, label: "Review", icon: "✦" },
 ];
 
+const SAVED_ADDRESSES_KEY = "arke_saved_addresses";
+
+const emptyShippingInfo = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
+  address: "",
+  apartment: "",
+  city: "",
+  state: "",
+  pincode: "",
+  saveAddress: false,
+};
+
+const readId = (value) => {
+  if (!value) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  return String(value._id || value.id || value.productId || value.product_id || "");
+};
+
+const getOrderProductId = (item) =>
+  readId(item?.product) ||
+  readId(item?.productId) ||
+  readId(item?.product_id) ||
+  readId(item?.productID) ||
+  readId(item?.variant?.productId) ||
+  readId(item?.id) ||
+  readId(item?._id);
+
+const getCheckoutProduct = (item) => {
+  if (item?.product && typeof item.product === "object") return item.product;
+  if (item?.productId && typeof item.productId === "object") return item.productId;
+  return item || {};
+};
+
+const normaliseOrderItems = (cartItems) =>
+  cartItems
+    .map((item) => {
+      const product = getCheckoutProduct(item);
+      const productId = getOrderProductId(item);
+      const quantity = Math.max(1, Number(item.quantity || item.qty || 1));
+      const price = Number(product.price || product.salePrice || item.price || item.salePrice || 0);
+      const image = getProductImage(product);
+
+      if (!productId) return null;
+
+      return {
+        productId,
+        product: productId,
+        product_id: productId,
+        quantity,
+        qty: quantity,
+        price,
+        name: product.name || product.title || item.name || "Product",
+        image: image || undefined,
+      };
+    })
+    .filter(Boolean);
+
+const getStoredUserInfo = () => {
+  try {
+    return JSON.parse(localStorage.getItem("arke_user")) || {};
+  } catch {
+    return {};
+  }
+};
+
+const createInitialShippingInfo = () => {
+  const user = getStoredUserInfo();
+  const [firstName = "", ...lastParts] = String(user.name || "").trim().split(/\s+/).filter(Boolean);
+
+  return {
+    ...emptyShippingInfo,
+    firstName: user.firstname || user.firstName || firstName,
+    lastName: user.lastname || user.lastName || lastParts.join(" "),
+    email: user.email || "",
+    phone: user.phone || user.mobile || "",
+  };
+};
+
+const getSavedAddresses = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVED_ADDRESSES_KEY));
+    return Array.isArray(saved) ? saved.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCheckoutAddress = (shippingInfo) => {
+  if (!shippingInfo.saveAddress) return [];
+
+  const addressToSave = {
+    id: `${Date.now()}`,
+    firstName: shippingInfo.firstName.trim(),
+    lastName: shippingInfo.lastName.trim(),
+    email: shippingInfo.email.trim(),
+    phone: shippingInfo.phone.trim(),
+    address: shippingInfo.address.trim(),
+    apartment: shippingInfo.apartment.trim(),
+    city: shippingInfo.city.trim(),
+    state: shippingInfo.state.trim(),
+    pincode: shippingInfo.pincode.trim(),
+    saveAddress: false,
+  };
+
+  const signature = (address) =>
+    [address.address, address.apartment, address.city, address.state, address.pincode, address.phone]
+      .filter(Boolean)
+      .join("|")
+      .toLowerCase();
+
+  const next = [
+    addressToSave,
+    ...getSavedAddresses().filter((address) => signature(address) !== signature(addressToSave)),
+  ].slice(0, 4);
+
+  localStorage.setItem(SAVED_ADDRESSES_KEY, JSON.stringify(next));
+  return next;
+};
+
 /* ================================================================== */
 /*  CHECKOUT MODAL                                                     */
 /* ================================================================== */
@@ -52,19 +174,10 @@ function CheckoutModal({
   const [animateIn, setAnimateIn] = useState(false);
   const [errors, setErrors] = useState({});
   const [touchedFields, setTouchedFields] = useState({});
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
 
-  const [shippingInfo, setShippingInfo] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    address: "",
-    apartment: "",
-    city: "",
-    state: "",
-    pincode: "",
-    saveAddress: false,
-  });
+  const [shippingInfo, setShippingInfo] = useState(createInitialShippingInfo);
 
   const [paymentInfo, setPaymentInfo] = useState({
     method: "card",
@@ -77,6 +190,14 @@ function CheckoutModal({
 
   useEffect(() => {
     if (isOpen) {
+      const saved = getSavedAddresses();
+      setSavedAddresses(saved);
+      setSelectedAddressId("");
+      setShippingInfo((prev) => {
+        const hasAddress = Boolean(prev.address || prev.city || prev.pincode);
+        if (hasAddress) return prev;
+        return saved[0] ? { ...saved[0], saveAddress: false } : createInitialShippingInfo();
+      });
       document.body.style.overflow = "hidden";
       setTimeout(() => setAnimateIn(true), 50);
     } else {
@@ -129,6 +250,10 @@ function CheckoutModal({
     else if (!/^\d{6}$/.test(shippingInfo.pincode))
       e.pincode = "Invalid pincode";
     setErrors(e);
+    setTouchedFields((prev) => ({
+      ...prev,
+      ...Object.fromEntries(Object.keys(e).map((field) => [field, true])),
+    }));
     return Object.keys(e).length === 0;
   };
 
@@ -149,6 +274,10 @@ function CheckoutModal({
       else if (!paymentInfo.upiId.includes("@")) e.upiId = "Invalid UPI ID";
     }
     setErrors(e);
+    setTouchedFields((prev) => ({
+      ...prev,
+      ...Object.fromEntries(Object.keys(e).map((field) => [field, true])),
+    }));
     return Object.keys(e).length === 0;
   };
 
@@ -166,28 +295,65 @@ function CheckoutModal({
     setCurrentStep((s) => Math.max(s - 1, 1));
   };
 
+  const handleShippingChange = (updater) => {
+    setSelectedAddressId("");
+    setShippingInfo(updater);
+  };
+
+  const handleSavedAddressSelect = (address) => {
+    setSelectedAddressId(address.id);
+    setErrors({});
+    setTouchedFields({});
+    setShippingInfo({ ...createInitialShippingInfo(), ...address, saveAddress: false });
+  };
+
+  const handleUseNewAddress = () => {
+    setSelectedAddressId("");
+    setErrors({});
+    setTouchedFields({});
+    setShippingInfo(createInitialShippingInfo());
+  };
+
   /* ── REAL ORDER PLACEMENT ── */
   const handlePlaceOrder = async () => {
-    setIsProcessing(true);
     try {
-      // Payload matches backend /place-order route exactly
+      const orderItems = normaliseOrderItems(items);
+
+      if (orderItems.length === 0 || orderItems.length !== items.length) {
+        throw new Error("Some cart items are missing product details. Please refresh the cart and try again.");
+      }
+
+      setIsProcessing(true);
+
+      const shippingAddress = {
+        firstName: shippingInfo.firstName.trim(),
+        lastName: shippingInfo.lastName.trim(),
+        name: `${shippingInfo.firstName} ${shippingInfo.lastName}`.trim(),
+        email: shippingInfo.email.trim(),
+        phone: shippingInfo.phone.trim(),
+        address: shippingInfo.address.trim(),
+        apartment: shippingInfo.apartment.trim(),
+        city: shippingInfo.city.trim(),
+        state: shippingInfo.state.trim(),
+        pincode: shippingInfo.pincode.trim(),
+      };
+
+      // Send the common order item keys so the backend can validate products
+      // even if it expects "products" instead of "items".
       const orderPayload = {
-        items: items.map((item) => ({
-          productId: item.productId || item.product?._id || item.product?.id || item._id,
-          quantity: item.quantity || 1,
-        })),
-        shippingAddress: {
-          firstName: shippingInfo.firstName,
-          lastName: shippingInfo.lastName,
-          email: shippingInfo.email,
-          phone: shippingInfo.phone,
-          address: shippingInfo.address,
-          apartment: shippingInfo.apartment,
-          city: shippingInfo.city,
-          state: shippingInfo.state,
-          pincode: shippingInfo.pincode,
-        },
+        products: orderItems,
+        items: orderItems,
+        orderItems,
+        shippingAddress,
+        address: shippingAddress,
+        customerDetails: shippingAddress,
         paymentMethod: paymentInfo.method,
+        payment: { method: paymentInfo.method },
+        subtotal,
+        discountAmount,
+        shipping,
+        totalAmount: total,
+        total,
         couponCode: appliedCoupon?.code || appliedCoupon?.offercode || undefined,
       };
 
@@ -207,6 +373,14 @@ function CheckoutModal({
       }
 
       const data = await response.json();
+
+      if (data?.success === false) {
+        throw new Error(data.message || "Order failed. Please try again.");
+      }
+
+      if (shippingInfo.saveAddress) {
+        setSavedAddresses(saveCheckoutAddress(shippingInfo));
+      }
 
       // Derive a display-friendly order ID from whatever the backend returns
       const realOrderId =
@@ -408,12 +582,16 @@ function CheckoutModal({
               {currentStep === 1 && (
                 <ShippingStep
                   info={shippingInfo}
-                  onChange={setShippingInfo}
+                  onChange={handleShippingChange}
                   errors={errors}
                   touched={touchedFields}
                   onBlur={(f) =>
                     setTouchedFields((p) => ({ ...p, [f]: true }))
                   }
+                  savedAddresses={savedAddresses}
+                  selectedAddressId={selectedAddressId}
+                  onSelectSavedAddress={handleSavedAddressSelect}
+                  onUseNewAddress={handleUseNewAddress}
                 />
               )}
               {currentStep === 2 && (
@@ -807,12 +985,125 @@ function ModalFooter({ currentStep, onBack, onNext, onPlaceOrder, isProcessing, 
 /* ------------------------------------------------------------------ */
 /*  Step 1 – Shipping                                                  */
 /* ------------------------------------------------------------------ */
-function ShippingStep({ info, onChange, errors, touched, onBlur }) {
+function ShippingStep({
+  info,
+  onChange,
+  errors,
+  touched,
+  onBlur,
+  savedAddresses,
+  selectedAddressId,
+  onSelectSavedAddress,
+  onUseNewAddress,
+}) {
   const set = (field, value) =>
     onChange((prev) => ({ ...prev, [field]: value }));
 
   return (
     <div className="step-slide">
+      {savedAddresses.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <SectionLabel text="Saved Addresses" />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {savedAddresses.map((address) => {
+              const active = selectedAddressId === address.id;
+              return (
+                <button
+                  key={address.id}
+                  type="button"
+                  onClick={() => onSelectSavedAddress(address)}
+                  style={{
+                    textAlign: "left",
+                    border: `1.5px solid ${active ? THEME.burgundy : THEME.border}`,
+                    background: active
+                      ? `linear-gradient(135deg,${THEME.blush}28,${THEME.champagne}18)`
+                      : THEME.surface,
+                    borderRadius: 10,
+                    padding: "14px 16px",
+                    cursor: "pointer",
+                    transition: "all 0.25s ease",
+                    boxShadow: active ? `0 8px 22px ${THEME.rose}22` : "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 10,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: "'Poppins',sans-serif",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: THEME.text,
+                      }}
+                    >
+                      {address.firstName} {address.lastName}
+                    </span>
+                    {active && (
+                      <span
+                        style={{
+                          color: THEME.burgundy,
+                          fontFamily: "'Poppins',sans-serif",
+                          fontSize: 10,
+                          fontWeight: 700,
+                        }}
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    style={{
+                      fontFamily: "'Poppins',sans-serif",
+                      fontSize: 11,
+                      color: THEME.textMuted,
+                      lineHeight: 1.55,
+                      margin: 0,
+                    }}
+                  >
+                    {address.address}
+                    {address.apartment ? `, ${address.apartment}` : ""}
+                    <br />
+                    {address.city}, {address.state} {address.pincode}
+                  </p>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={onUseNewAddress}
+              style={{
+                border: `1.5px dashed ${THEME.rose}`,
+                background: `${THEME.blush}10`,
+                color: THEME.burgundy,
+                borderRadius: 10,
+                padding: "14px 16px",
+                cursor: "pointer",
+                fontFamily: "'Poppins',sans-serif",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
+              + New Address
+            </button>
+          </div>
+        </div>
+      )}
+
+      <SectionLabel text={selectedAddressId ? "Edit Delivery Details" : "Delivery Details"} />
       <div
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}
         className="co-two-col"

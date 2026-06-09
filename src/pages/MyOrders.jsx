@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../context/useStore";
-import { API_BASE } from "../services/api";
-import {useCart} from "../context/CartContext";
+import { API_BASE, getProductImage, imgUrl } from "../services/api";
 
 const THEME = {
   bg: "#faf8f5",
@@ -19,12 +18,97 @@ const THEME = {
   error: "#d97070",
 };
 
+const toArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  return [];
+};
+
+const firstArray = (...values) => {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+};
+
+const readProduct = (item) => {
+  if (item?.product && typeof item.product === "object") return item.product;
+  if (item?.productId && typeof item.productId === "object") return item.productId;
+  if (item?.productDetails && typeof item.productDetails === "object") return item.productDetails;
+  return {};
+};
+
+const getOrderItemImages = (item) => {
+  const product = readProduct(item);
+  const candidates = [
+    item?.image,
+    item?.images,
+    item?.thumbnail,
+    product?.image,
+    product?.images,
+    product?.thumbnail,
+    getProductImage(product),
+  ];
+
+  return candidates
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .map((value) => imgUrl(value))
+    .filter(Boolean);
+};
+
+const normaliseOrderItem = (item) => {
+  const product = readProduct(item);
+  const images = getOrderItemImages(item);
+  const quantity = Math.max(1, Number(item?.quantity || item?.qty || 1));
+  const price = Number(
+    item?.price ||
+      item?.salePrice ||
+      item?.productPrice ||
+      product?.price ||
+      product?.salePrice ||
+      0
+  );
+
+  return {
+    ...item,
+    product,
+    name: item?.name || product?.name || product?.title || "Product",
+    quantity,
+    price,
+    image: images[0],
+    images,
+  };
+};
+
+const normaliseOrder = (order) => {
+  const items = firstArray(order?.items, order?.products, order?.orderItems).map(normaliseOrderItem);
+
+  return {
+    ...order,
+    _id: order?._id || order?.id || order?.orderId || order?.orderNumber || `${Date.now()}`,
+    orderNumber: order?.orderNumber || order?.orderNo || order?.number,
+    items,
+    shipping: Number(order?.shipping || order?.shippingCharge || order?.deliveryCharge || 0),
+    totalAmount: Number(order?.totalAmount || order?.total || order?.grandTotal || order?.amount || 0),
+    createdAt: order?.createdAt || order?.created_at || order?.orderDate || new Date().toISOString(),
+    status: order?.status || order?.orderStatus || "pending",
+    paymentStatus: order?.paymentStatus || order?.payment?.status || "pending",
+    paymentMethod: order?.paymentMethod || order?.payment?.method || "cod",
+    estimatedDelivery: order?.estimatedDelivery || order?.deliveryDate,
+    shippingAddress: order?.shippingAddress || order?.address || order?.customerDetails || {},
+  };
+};
+
+const getOrderDisplayId = (order) =>
+  order?.orderNumber || String(order?._id || order?.id || "").slice(-6).toUpperCase() || "ORDER";
+
 export default function MyOrders() {
   const { user } = useStore();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -41,17 +125,14 @@ export default function MyOrders() {
     setLoading(true);
     setError("");
     try {
-    const response = await fetch(
-  `${API_BASE}/orders`,
-  {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("arke_token")}`,
-      "Content-Type": "application/json",
-      "ngrok-skip-browser-warning": "true",
-    },
-  }
-);
+      const response = await fetch(`${API_BASE}/orders`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("arke_token")}`,
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+      });
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -65,7 +146,27 @@ export default function MyOrders() {
       }
 
       const data = await response.json();
-      setOrders(data.data || []);
+
+      if (data?.success === false) {
+        setError(data.message || "Failed to load orders. Please try again.");
+        setOrders([]);
+        return;
+      }
+
+      const rawOrderArray = firstArray(
+        data?.data,
+        data?.orders,
+        data?.order,
+        data?.result,
+        data?.items,
+        Array.isArray(data) ? data : []
+      );
+      const rawOrders =
+        rawOrderArray.length > 0
+          ? rawOrderArray
+          : toArray(data?.order || data?.data || data?.result);
+
+      setOrders(rawOrders.map(normaliseOrder));
     } catch (err) {
       setError("Network error. Please check your connection.");
       console.error("Fetch orders error:", err);
@@ -107,12 +208,44 @@ export default function MyOrders() {
     return colors[status?.toLowerCase()] || THEME.rose;
   };
 
+  // Get all product images from order items
+  const getAllProductImages = (order) => {
+    const images = [];
+    order.items?.forEach((item, itemIdx) => {
+      const itemImages = item.images?.length ? item.images : item.image ? [item.image] : [];
+      itemImages.forEach((img, imgIdx) => {
+        const src = imgUrl(img);
+        if (src) {
+          images.push({
+            src,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            itemIndex: itemIdx,
+            imageIndex: imgIdx,
+          });
+        }
+      });
+    });
+    return images;
+  };
+
+  const getOrderImageCount = (order) =>
+    order.items?.reduce((count, item) => count + (item.images?.length || (item.image ? 1 : 0)), 0) || 0;
+
+  // Check if image URL is valid
+  const isValidImageUrl = (url) => Boolean(imgUrl(url));
+
+  const renderOrderId = (order) => getOrderDisplayId(order);
+
   return (
-    <div style={{
-      background: THEME.bg,
-      minHeight: "100vh",
-      paddingTop: 120,
-    }}>
+    <div
+      style={{
+        background: THEME.bg,
+        minHeight: "100vh",
+        paddingTop: 120,
+      }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;600&display=swap');
 
@@ -123,6 +256,11 @@ export default function MyOrders() {
 
         @keyframes spin {
           to { transform: rotate(360deg); }
+        }
+
+        @keyframes imageSlide {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
 
         .orders-container {
@@ -275,12 +413,66 @@ export default function MyOrders() {
           cursor: pointer;
           background: ${THEME.surface};
           box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+          display: grid;
+          grid-template-columns: 180px 1fr;
         }
 
         .order-card:hover {
           border-color: ${THEME.rose};
           box-shadow: 0 8px 24px rgba(232, 180, 196, 0.2);
           transform: translateY(-2px);
+        }
+
+        .order-image-section {
+          position: relative;
+          overflow: hidden;
+          background: ${THEME.blush}10;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 200px;
+        }
+
+        .order-image {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .order-card:hover .order-image {
+          transform: scale(1.05);
+        }
+
+        .image-placeholder {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(135deg, ${THEME.blush}, ${THEME.champagne});
+          font-size: 40px;
+          color: ${THEME.rose}40;
+        }
+
+        .image-count-badge {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          background: ${THEME.rose};
+          color: white;
+          padding: 6px 12px;
+          border-radius: 20px;
+          font-family: 'Poppins', sans-serif;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          box-shadow: 0 4px 12px rgba(232, 180, 196, 0.3);
+        }
+
+        .order-main-content {
+          display: flex;
+          flex-direction: column;
         }
 
         .order-header {
@@ -327,6 +519,7 @@ export default function MyOrders() {
           grid-template-columns: 1fr 1fr 1fr 1fr;
           gap: 24px;
           align-items: center;
+          flex: 1;
         }
 
         .order-info {
@@ -417,7 +610,7 @@ export default function MyOrders() {
           border: 1.5px solid ${THEME.border};
           border-radius: 12px;
           padding: 40px;
-          max-width: 600px;
+          max-width: 700px;
           width: 100%;
           max-height: 85vh;
           overflow-y: auto;
@@ -466,16 +659,114 @@ export default function MyOrders() {
           color: ${THEME.burgundy};
         }
 
+        .image-gallery {
+          margin-bottom: 32px;
+          border-radius: 10px;
+          overflow: hidden;
+          background: ${THEME.blush}10;
+        }
+
+        .main-image-container {
+          width: 100%;
+          height: 400px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(135deg, ${THEME.blush}, ${THEME.champagne});
+          position: relative;
+          overflow: hidden;
+        }
+
+        .main-image {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          animation: imageSlide 0.3s ease-in-out;
+        }
+
+        .main-image-placeholder {
+          font-size: 80px;
+          opacity: 0.3;
+        }
+
+        .image-thumbnails {
+          display: flex;
+          gap: 8px;
+          padding: 12px;
+          background: ${THEME.surface};
+          overflow-x: auto;
+          border-top: 1px solid ${THEME.border};
+        }
+
+        .thumbnail {
+          width: 70px;
+          height: 70px;
+          border-radius: 6px;
+          overflow: hidden;
+          cursor: pointer;
+          border: 2px solid ${THEME.border};
+          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+          flex-shrink: 0;
+          background: ${THEME.blush}10;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .thumbnail.active {
+          border-color: ${THEME.rose};
+          box-shadow: 0 4px 12px ${THEME.rose}40;
+        }
+
+        .thumbnail:hover {
+          border-color: ${THEME.burgundy};
+        }
+
+        .thumbnail img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .thumbnail-placeholder {
+          font-size: 20px;
+          opacity: 0.3;
+        }
+
         .order-item {
           display: flex;
           justify-content: space-between;
-          align-items: center;
+          align-items: flex-start;
           padding: 16px 0;
           border-bottom: 1px solid ${THEME.border};
+          gap: 16px;
         }
 
         .order-item:last-child {
           border-bottom: none;
+        }
+
+        .item-image-mini {
+          width: 60px;
+          height: 60px;
+          border-radius: 6px;
+          overflow: hidden;
+          background: ${THEME.blush}10;
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .item-image-mini img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .item-image-placeholder {
+          font-size: 24px;
+          opacity: 0.3;
         }
 
         .item-details h4 {
@@ -505,6 +796,7 @@ export default function MyOrders() {
           -webkit-text-fill-color: transparent;
           background-clip: text;
           letter-spacing: 0.5px;
+          white-space: nowrap;
         }
 
         .summary-row {
@@ -530,6 +822,14 @@ export default function MyOrders() {
             font-size: 36px;
           }
 
+          .order-card {
+            grid-template-columns: 1fr;
+          }
+
+          .order-image-section {
+            min-height: 180px;
+          }
+
           .order-content {
             grid-template-columns: 1fr 1fr;
             gap: 16px;
@@ -537,6 +837,11 @@ export default function MyOrders() {
 
           .modal-content {
             padding: 24px;
+            max-width: 95%;
+          }
+
+          .main-image-container {
+            height: 300px;
           }
         }
       `}</style>
@@ -579,90 +884,128 @@ export default function MyOrders() {
         {/* Orders List */}
         {!loading && !error && orders.length > 0 && (
           <div className="orders-list">
-            {orders.map((order) => (
-              <div
-                key={order._id}
-                className="order-card"
-                onClick={() => setSelectedOrder(order)}
-              >
-                <div className="order-header">
-                  <div>
-                    <div className="order-id">
-                      Order #{order.orderNumber || order._id.slice(-6)}
-                    </div>
-                    <div className="order-date">
-                      {new Date(order.createdAt).toLocaleDateString(
-                        "en-IN"
-                      )}
-                    </div>
-                  </div>
-                  <div
-                    className="order-status"
-                    style={{
-                      background: getStatusColor(order.status),
-                      border: `1px solid ${getStatusBorder(order.status)}`,
-                      color: getStatusText(order.status),
-                    }}
-                  >
-                    {order.status?.toUpperCase()}
-                  </div>
-                </div>
+            {orders.map((order) => {
+              const firstImage = imgUrl(order.items?.[0]?.image || order.items?.[0]?.images?.[0]);
+              const imageCount = getOrderImageCount(order);
 
-                <div className="order-content">
-                  <div className="order-info">
-                    <div className="info-label">Total Amount</div>
-                    <div className="amount-value">
-                      ₹{order.totalAmount?.toLocaleString("en-IN") || "0"}
-                    </div>
+              return (
+                <div
+                  key={order._id || renderOrderId(order)}
+                  className="order-card"
+                  onClick={() => {
+                    setSelectedOrder(order);
+                    setActiveImageIndex(0);
+                  }}
+                >
+                  <div className="order-image-section">
+                    {isValidImageUrl(firstImage) ? (
+                      <>
+                        <img
+                          src={firstImage}
+                          alt="Order product"
+                          className="order-image"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                            if (e.target.nextSibling) {
+                              e.target.nextSibling.style.display = "flex";
+                            }
+                          }}
+                        />
+                        <div
+                          className="image-placeholder"
+                          style={{ display: "none" }}
+                        >
+                          📸
+                        </div>
+                        {imageCount > 1 && (
+                          <div className="image-count-badge">
+                            +{imageCount - 1} more
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="image-placeholder">📸</div>
+                    )}
                   </div>
 
-                  <div className="order-info">
-                    <div className="info-label">Items</div>
-                    <div className="info-value">
-                      {order.items?.length || 0} item(s)
-                    </div>
-                  </div>
-
-                  <div className="order-info">
-                    <div className="info-label">Delivery</div>
-                    <div className="info-value">
-                      {order.estimatedDelivery
-                        ? new Date(order.estimatedDelivery).toLocaleDateString(
+                  <div className="order-main-content">
+                    <div className="order-header">
+                      <div>
+                        <div className="order-id">
+                          Order #{renderOrderId(order)}
+                        </div>
+                        <div className="order-date">
+                          {new Date(order.createdAt).toLocaleDateString(
                             "en-IN"
-                          )
-                        : "Processing"}
+                          )}
+                        </div>
+                      </div>
+                      <div
+                        className="order-status"
+                        style={{
+                          background: getStatusColor(order.status),
+                          border: `1px solid ${getStatusBorder(order.status)}`,
+                          color: getStatusText(order.status),
+                        }}
+                      >
+                        {order.status?.toUpperCase()}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="order-info">
-                    <div className="info-label">Payment</div>
-                    <div className="info-value">
-                      {order.paymentStatus?.toUpperCase() || "PENDING"}
+                    <div className="order-content">
+                      <div className="order-info">
+                        <div className="info-label">Total Amount</div>
+                        <div className="amount-value">
+                          ₹{order.totalAmount?.toLocaleString("en-IN") || "0"}
+                        </div>
+                      </div>
+
+                      <div className="order-info">
+                        <div className="info-label">Items</div>
+                        <div className="info-value">
+                          {order.items?.length || 0} item(s)
+                        </div>
+                      </div>
+
+                      <div className="order-info">
+                        <div className="info-label">Delivery</div>
+                        <div className="info-value">
+                          {order.estimatedDelivery
+                            ? new Date(order.estimatedDelivery).toLocaleDateString(
+                                "en-IN"
+                              )
+                            : "Processing"}
+                        </div>
+                      </div>
+
+                      <div className="order-info">
+                        <div className="info-label">Payment</div>
+                        <div className="info-value">
+                          {order.paymentStatus?.toUpperCase() || "PENDING"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="order-actions">
+                      <button className="action-btn">View Details</button>
+                      {order.status?.toLowerCase() === "shipped" && (
+                        <button className="action-btn">Track Order</button>
+                      )}
+                      {["pending", "processing"].includes(
+                        order.status?.toLowerCase()
+                      ) && <button className="action-btn">Cancel Order</button>}
                     </div>
                   </div>
                 </div>
-
-                <div className="order-actions">
-                  <button className="action-btn">View Details</button>
-                  {order.status?.toLowerCase() === "shipped" && (
-                    <button className="action-btn">Track Order</button>
-                  )}
-                  {["pending", "processing"].includes(
-                    order.status?.toLowerCase()
-                  ) && <button className="action-btn">Cancel Order</button>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Order Detail Modal */}
       {selectedOrder && (
-        <div
-          className="modal"
-          onClick={() => setSelectedOrder(null)}
-        >
+        <div className="modal" onClick={() => setSelectedOrder(null)}>
           <div
             className="modal-content"
             onClick={(e) => e.stopPropagation()}
@@ -681,7 +1024,7 @@ export default function MyOrders() {
               <div style={{ marginBottom: 24 }}>
                 <div className="info-label">Order Number</div>
                 <div className="info-value">
-                  #{selectedOrder.orderNumber || selectedOrder._id.slice(-6)}
+                  #{renderOrderId(selectedOrder)}
                 </div>
               </div>
 
@@ -716,6 +1059,64 @@ export default function MyOrders() {
                 </div>
               </div>
 
+              {/* Image Gallery */}
+              {getAllProductImages(selectedOrder).length > 0 && (
+                <div className="image-gallery" style={{ marginBottom: 32 }}>
+                  <div className="main-image-container">
+                    {isValidImageUrl(
+                      getAllProductImages(selectedOrder)[activeImageIndex]?.src
+                    ) ? (
+                      <img
+                        src={
+                          getAllProductImages(selectedOrder)[activeImageIndex]
+                            .src
+                        }
+                        alt={
+                          getAllProductImages(selectedOrder)[activeImageIndex]
+                            .name
+                        }
+                        className="main-image"
+                        onError={(e) => {
+                          e.target.style.display = "none";
+                          const placeholder = document.createElement("div");
+                          placeholder.className = "main-image-placeholder";
+                          placeholder.textContent = "📸";
+                          e.target.parentElement.appendChild(placeholder);
+                        }}
+                      />
+                    ) : (
+                      <div className="main-image-placeholder">📸</div>
+                    )}
+                  </div>
+                  {getAllProductImages(selectedOrder).length > 1 && (
+                    <div className="image-thumbnails">
+                      {getAllProductImages(selectedOrder).map((img, idx) => (
+                        <div
+                          key={idx}
+                          className={`thumbnail ${
+                            activeImageIndex === idx ? "active" : ""
+                          }`}
+                          onClick={() => setActiveImageIndex(idx)}
+                        >
+                          {isValidImageUrl(img.src) ? (
+                            <img
+                              src={img.src}
+                              alt={`${img.name} ${idx + 1}`}
+                              onError={(e) => {
+                                e.target.style.display = "none";
+                                e.target.parentElement.innerHTML = `<div class="thumbnail-placeholder">📸</div>`;
+                              }}
+                            />
+                          ) : (
+                            <div className="thumbnail-placeholder">📸</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div
                 style={{
                   marginBottom: 32,
@@ -728,6 +1129,21 @@ export default function MyOrders() {
                 </div>
                 {selectedOrder.items?.map((item, idx) => (
                   <div key={idx} className="order-item">
+                    <div className="item-image-mini">
+                      {isValidImageUrl(item.image || item.images?.[0]) ? (
+                        <img
+                          src={item.image || item.images?.[0]}
+                          alt={item.name}
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                            e.target.parentElement.innerHTML =
+                              '<div class="item-image-placeholder">📸</div>';
+                          }}
+                        />
+                      ) : (
+                        <div className="item-image-placeholder">📸</div>
+                      )}
+                    </div>
                     <div className="item-details">
                       <h4>{item.name}</h4>
                       <p>
@@ -736,7 +1152,8 @@ export default function MyOrders() {
                       </p>
                     </div>
                     <div className="item-price">
-                      ₹{(item.quantity * item.price)?.toLocaleString("en-IN")}
+                      ₹
+                      {(item.quantity * item.price)?.toLocaleString("en-IN")}
                     </div>
                   </div>
                 ))}
@@ -755,7 +1172,8 @@ export default function MyOrders() {
                   <span className="info-value">
                     ₹
                     {(
-                      selectedOrder.totalAmount - (selectedOrder.shipping || 0)
+                      selectedOrder.totalAmount -
+                      (selectedOrder.shipping || 0)
                     )?.toLocaleString("en-IN")}
                   </span>
                 </div>
