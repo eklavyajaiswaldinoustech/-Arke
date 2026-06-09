@@ -114,15 +114,17 @@ export default function OrderTracking() {
   const loadOrders = async () => {
     setOrdersLoading(true);
     try {
-      // TODO: Replace with your actual API call
-      // const res = await api.getMyOrders();
-      // if (res?.success) setOrders(res.data || res.orders || []);
-
-      // Mock data for development — remove when backend is connected
-      await new Promise((r) => setTimeout(r, 800));
-      setOrders(MOCK_ORDERS);
+      const res = await api.getMyOrders();
+      if (res?.success) {
+        const rawOrderArray = Array.isArray(res.data) ? res.data : [];
+        setOrders(rawOrderArray);
+      } else {
+        console.error("Failed to load orders:", res?.message);
+        setOrders([]);
+      }
     } catch (err) {
       console.error("Failed to load orders:", err);
+      setOrders([]);
     } finally {
       setOrdersLoading(false);
     }
@@ -138,17 +140,12 @@ export default function OrderTracking() {
     setTrackError("");
     setTrackResult(null);
     try {
-      // TODO: Replace with your actual API
-      // const res = await api.trackOrder(id, trackEmail);
-      // if (res?.success) setTrackResult(res.data);
-      // else setTrackError(res?.message || "Order not found");
-
-      await new Promise((r) => setTimeout(r, 1200));
-      const found = MOCK_ORDERS.find(
-        (o) => o.orderId.toLowerCase() === id.toLowerCase()
-      );
-      if (found) setTrackResult(found);
-      else setTrackError("Order not found. Please check the Order ID and try again.");
+      const res = await api.trackOrder(id, trackEmail || undefined);
+      if (res?.success) {
+        setTrackResult(res.data);
+      } else {
+        setTrackError(res?.message || "Order not found");
+      }
     } catch (err) {
       setTrackError("Failed to track order. Please try again.");
     } finally {
@@ -304,33 +301,28 @@ export default function OrderTracking() {
           onClose={() => setReturnModal(null)}
           onSubmit={async (returnData) => {
             try {
-              // TODO: Replace with your actual API call
-              // const res = await api.requestReturn(returnModal.orderId, returnData);
-              // if (res?.success) { ... }
-
-              console.log("Return request:", {
-                orderId: returnModal.orderId,
-                ...returnData,
-              });
-              await new Promise((r) => setTimeout(r, 1500));
-
-              setOrders((prev) =>
-                prev.map((o) =>
-                  o.orderId === returnModal.orderId
-                    ? {
-                        ...o,
-                        status: "return_requested",
-                        returnInfo: {
-                          ...returnData,
-                          requestedAt: new Date().toISOString(),
-                        },
-                      }
-                    : o
-                )
-              );
-              setReturnModal(null);
-              setActiveTab("returns");
-              return { success: true };
+              const res = await api.requestReturn(returnModal.orderId, returnData);
+              if (res?.success) {
+                setOrders((prev) =>
+                  prev.map((o) =>
+                    o.orderId === returnModal.orderId
+                      ? {
+                          ...o,
+                          status: "return_requested",
+                          returnInfo: {
+                            ...returnData,
+                            requestedAt: new Date().toISOString(),
+                          },
+                        }
+                      : o
+                  )
+                );
+                setReturnModal(null);
+                setActiveTab("returns");
+                return { success: true };
+              } else {
+                throw new Error(res?.message || "Failed to submit return request");
+              }
             } catch (err) {
               throw err;
             }

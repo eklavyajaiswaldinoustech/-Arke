@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../context/useStore";
-import { API_BASE, getProductImage, imgUrl } from "../services/api";
+import { API_BASE, getProductImage, imgUrl, api } from "../services/api";
 
 const THEME = {
   bg: "#faf8f5",
@@ -125,27 +125,7 @@ export default function MyOrders() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/orders`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("arke_token")}`,
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          setError("Session expired. Please log in again.");
-        } else if (response.status === 404) {
-          setOrders([]);
-        } else {
-          setError("Failed to load orders. Please try again.");
-        }
-        return;
-      }
-
-      const data = await response.json();
+      const data = await api.getMyOrders();
 
       if (data?.success === false) {
         setError(data.message || "Failed to load orders. Please try again.");

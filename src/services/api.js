@@ -142,8 +142,11 @@ export const api = {
   getCoupons: () => get("/api/coupons"),
 
   // ── Orders ─────────────────────────────────────────────────────
-  placeOrder: (data) => post("/api/place-order", data),
-
+  placeOrder: (data) => post("/api/place-order", data),  getMyOrders: () => get("/api/orders"),
+  getOrderDetail: (orderId) => get(`/api/orders/${orderId}`),
+  trackOrder: (orderId, email) => 
+    get(`/api/orders/track/${orderId}${email ? `?email=${encodeURIComponent(email)}` : ""}`),
+  requestReturn: (orderId, data) => post(`/api/orders/${orderId}/request-return`, data),
   // ── Announcements ──────────────────────────────────────────────
   getAnnouncements:   ()         => get("/api/announcements"),
   createAnnouncement: (data)     => post("/api/announcements",      data),
