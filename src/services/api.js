@@ -1,4 +1,4 @@
-export const BASE = "https://arke-backend.onrender.com/";
+export const BASE = "http://localhost:5050";
 export const API_BASE = `${BASE}/api`;
 
 /* ── Auth headers ─────────────────────────────────────────────────── */
@@ -104,10 +104,6 @@ export const api = {
   getTypes:          ()    => Promise.resolve({ data: [] }),
 
   // ── Cart  ── uses YOUR actual backend route names ──────────────
-  // GET  /api/viewCart
-  // POST /api/addCart          { productId, quantity }
-  // POST /api/removeFromCart   { productId, quantity }
-  // POST  /api/update-quantity { productId, quantity }
   getCart: () =>
     get("/api/viewCart"),
 
@@ -130,12 +126,9 @@ export const api = {
     }),
 
   clearCart: () =>
-    Promise.resolve({ success: true }), // no clear route in your backend
+    Promise.resolve({ success: true }),
 
   // ── Wishlist ───────────────────────────────────────────────────
-  // GET  /api/view-wishlist
-  // POST /api/add-to-wishlist     { productId }
-  // POST /api/remove-from-wishlist { productId }
   getWishlist:    ()          => get("/api/view-wishlist"),
   addToWishlist:  (productId)  => post("/api/add-to-wishlist", { productId }),
   removeWishlist: (productId)  => post("/api/remove-from-wishlist", { productId }),
@@ -144,9 +137,12 @@ export const api = {
   login:    (email, password) => post("/api/login",    { email, password }),
   register: (data)            => post("/api/add-user", data),
 
+  // ── Coupons ────────────────────────────────────────────────────
+  // ✅ FIX: changed from post() to get() to match backend GET /api/coupons
+  getCoupons: () => get("/api/coupons"),
+
   // ── Orders ─────────────────────────────────────────────────────
   placeOrder: (data) => post("/api/place-order", data),
-  
 
   // ── Announcements ──────────────────────────────────────────────
   getAnnouncements:   ()         => get("/api/announcements"),

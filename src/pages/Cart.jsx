@@ -338,8 +338,6 @@ function CheckoutModal({
         pincode: shippingInfo.pincode.trim(),
       };
 
-      // Send the common order item keys so the backend can validate products
-      // even if it expects "products" instead of "items".
       const orderPayload = {
         products: orderItems,
         items: orderItems,
@@ -382,7 +380,6 @@ function CheckoutModal({
         setSavedAddresses(saveCheckoutAddress(shippingInfo));
       }
 
-      // Derive a display-friendly order ID from whatever the backend returns
       const realOrderId =
         data?.order?.orderNumber ||
         data?.orderNumber ||
@@ -397,7 +394,6 @@ function CheckoutModal({
       setOrderPlaced(true);
       success("Order placed successfully! 🎉");
 
-      // Clear cart so sidebar count resets
       if (clearCart) clearCart();
     } catch (err) {
       console.error("handlePlaceOrder error:", err);
@@ -1855,15 +1851,37 @@ export default function Cart() {
 
   const notLoggedIn = useMemo(() => !localStorage.getItem("arke_token"), []);
 
+  // ✅ FIX: Added Authorization header so the protected /coupons route accepts the request.
+  // If you removed `protect` from the backend route, the header is harmless but still good practice.
   useEffect(() => {
     window.scrollTo(0, 0);
     const fetchOffers = async () => {
       try {
-        // TODO: replace with real endpoint
+        const token = localStorage.getItem("arke_token");
+        const response = await fetch(`${API_BASE}/coupons`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+
+        const data = await response.json();
+
+        if (data?.success && Array.isArray(data.data)) {
+          setOffersList(data.data);
+          console.log("✅ Coupons loaded:", data.data.length);
+        } else {
+          console.warn("No coupons found");
+          setOffersList([]);
+        }
       } catch (err) {
-        console.error("Failed to load offers:", err);
+        console.error("❌ Failed to load coupons:", err);
+        setOffersList([]);
       }
     };
+
     fetchOffers();
   }, []);
 
@@ -2027,7 +2045,6 @@ export default function Cart() {
         </div>
       )}
 
-      {/* ── Checkout Modal — now receives clearCart ── */}
       <CheckoutModal
         isOpen={showCheckout}
         onClose={() => setShowCheckout(false)}
