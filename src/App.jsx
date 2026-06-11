@@ -4,6 +4,7 @@ import { StoreProvider } from "./context/StoreContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import AuthModal from "./components/AuthModal";
+import Chatbot from "./components/Chatbot"; // ✅ ADD THIS IMPORT
 import Homepage from "./pages/Homepage";
 import NewCollection from "./pages/NewCollection";
 import BestSellers from "./pages/BestSellers";
@@ -273,10 +274,12 @@ function NotFound() {
 }
 
 /* ================================================================== */
-/*  LAYOUT                                                            */
+/*  LAYOUT WITH CHATBOT                                               */
 /* ================================================================== */
 function Layout() {
   const [showAuth, setShowAuth] = useState(false);
+  const [chatbotOpen, setChatbotOpen] = useState(false); // ✅ ADD THIS
+  const isLoggedIn = !!localStorage.getItem("arke_token"); // ✅ ADD THIS
 
   return (
     <>
@@ -347,7 +350,67 @@ function Layout() {
       <Footer />
 
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+
+      {/* ✅ ADD CHATBOT COMPONENT */}
+      <Chatbot
+        isOpen={chatbotOpen}
+        onClose={() => setChatbotOpen(false)}
+        isLoggedIn={isLoggedIn}
+      />
+
+      {/* ✅ ADD CHATBOT TOGGLE BUTTON */}
+      <ChatbotToggleButton
+        isOpen={chatbotOpen}
+        onClick={() => setChatbotOpen(!chatbotOpen)}
+      />
     </>
+  );
+}
+
+/* ================================================================== */
+/*  CHATBOT TOGGLE BUTTON COMPONENT                                   */
+/* ================================================================== */
+function ChatbotToggleButton({ isOpen, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        position: "fixed",
+        bottom: "30px",
+        right: "30px",
+        width: "60px",
+        height: "60px",
+        borderRadius: "50%",
+        background: isOpen
+          ? "linear-gradient(135deg, #8b4654, #e8b4c4)"
+          : "linear-gradient(135deg, #e8b4c4, #8b4654)",
+        border: "2px solid white",
+        color: "white",
+        fontSize: "28px",
+        cursor: "pointer",
+        boxShadow: isOpen
+          ? "0 8px 24px rgba(232, 180, 196, 0.4)"
+          : "0 4px 12px rgba(232, 180, 196, 0.3)",
+        zIndex: 9998,
+        transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "scale(1.1)";
+        e.currentTarget.style.boxShadow = "0 8px 28px rgba(232, 180, 196, 0.5)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "scale(1)";
+        e.currentTarget.style.boxShadow = isOpen
+          ? "0 8px 24px rgba(232, 180, 196, 0.4)"
+          : "0 4px 12px rgba(232, 180, 196, 0.3)";
+      }}
+      title={isOpen ? "Close Chatbot" : "Open Chatbot"}
+    >
+      {isOpen ? "✕" : "💬"}
+    </button>
   );
 }
 

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, imgUrl, extract } from "../services/api";
-import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import ProductCard from "../components/ProductCard";
+import { useSmartAddToCart } from "../hooks/useSmartAddToCart";
 
 const THEME = {
   bg: "#faf8f5",
@@ -20,14 +20,15 @@ const THEME = {
 export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { addToCart } = useCart();
   const { toggleWishlist } = useWishlist();
+  const { handleSmartAddToCart } = useSmartAddToCart();
+
   const [product, setProduct] = useState(null);
   const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
   const [imgIdx, setImgIdx] = useState(0);
   const [qty, setQty] = useState(1);
-  const [added, setAdded] = useState(false);
+  const [cartState, setCartState] = useState("idle"); // "idle" | "loading" | "added"
   const [addingToWish, setAddingToWish] = useState(false);
 
   useEffect(() => {
@@ -38,26 +39,31 @@ export default function ProductDetail() {
         const p = r?.data || r?.product || r;
         setProduct(p);
         setLoading(false);
-        // Load related products
         api.getLatestProducts().then((lr) => {
           const all = extract(lr, "products", "data");
-          setRelated(
-            all.filter((x) => (x._id || x.id) !== id).slice(0, 4)
-          );
+          setRelated(all.filter((x) => (x._id || x.id) !== id).slice(0, 4));
         });
       })
       .catch(() => setLoading(false));
     window.scrollTo(0, 0);
   }, [id]);
 
+  // ── Smart Add to Cart ─────────────────────────────────────────────
   const handleCart = async () => {
     if (!localStorage.getItem("arke_token")) {
       alert("Please login first");
       return;
     }
-    await addToCart(product || id, qty);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 3000);
+    if (cartState === "loading") return;
+
+    setCartState("loading");
+    try {
+      await handleSmartAddToCart(product, qty);
+      setCartState("added");
+      setTimeout(() => setCartState("idle"), 3000);
+    } catch {
+      setCartState("idle");
+    }
   };
 
   const handleWishlist = async () => {
@@ -90,15 +96,14 @@ export default function ProductDetail() {
         <style>{`
           @keyframes spin { to { transform: rotate(360deg); } }
           .spinner {
-            width: 48px;
-            height: 48px;
+            width: 48px; height: 48px;
             border: 3px solid ${THEME.border};
             border-top-color: ${THEME.rose};
             border-radius: 50%;
             animation: spin 1s linear infinite;
           }
         `}</style>
-        <div className="spinner"></div>
+        <div className="spinner" />
         <span
           style={{
             color: THEME.textMuted,
@@ -178,17 +183,19 @@ export default function ProductDetail() {
   const ogPrice = product.mrp || product.originalPrice;
   const desc = product.description || product.details || "";
 
+  // Button label/style based on state
+  const isAdded = cartState === "added";
+  const isLoading = cartState === "loading";
+
   return (
     <div style={{ background: THEME.bg, minHeight: "100vh", paddingTop: "100px" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;600&display=swap');
-
         @keyframes fadeInUp {
           from { opacity: 0; transform: translateY(24px); }
           to { opacity: 1; transform: translateY(0); }
         }
-
-        .pd-main { animation: fadeInUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .pd-main    { animation: fadeInUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
         .pd-related { animation: fadeInUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both; }
       `}</style>
 
@@ -205,7 +212,6 @@ export default function ProductDetail() {
       >
         {/* Image Column */}
         <div>
-          {/* Main Image */}
           {imgUrl(images[imgIdx]) ? (
             <img
               src={imgUrl(images[imgIdx])}
@@ -231,13 +237,10 @@ export default function ProductDetail() {
                 borderRadius: "8px",
               }}
             >
-              <span style={{ color: `${THEME.rose}40`, fontSize: "120px" }}>
-                ◇
-              </span>
+              <span style={{ color: `${THEME.rose}40`, fontSize: "120px" }}>◇</span>
             </div>
           )}
 
-          {/* Thumbnails */}
           {images.length > 1 && (
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
               {images.map((im, i) => {
@@ -312,7 +315,6 @@ export default function ProductDetail() {
               fontWeight: 300,
               color: THEME.text,
               lineHeight: "1.2",
-              marginBottom: "24px",
               margin: "0 0 24px 0",
             }}
           >
@@ -320,7 +322,14 @@ export default function ProductDetail() {
           </h1>
 
           {/* Price */}
-          <div style={{ display: "flex", gap: "16px", alignItems: "baseline", marginBottom: "32px" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: "16px",
+              alignItems: "baseline",
+              marginBottom: "32px",
+            }}
+          >
             <span
               style={{
                 fontFamily: "'Cormorant Garamond', serif",
@@ -367,7 +376,14 @@ export default function ProductDetail() {
           <div style={{ borderTop: `1.5px solid ${THEME.border}`, margin: "32px 0" }} />
 
           {/* Quantity */}
-          <div style={{ display: "flex", alignItems: "center", gap: "20px", marginBottom: "24px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "20px",
+              marginBottom: "24px",
+            }}
+          >
             <span
               style={{
                 fontFamily: "'Poppins', sans-serif",
@@ -405,12 +421,8 @@ export default function ProductDetail() {
                   justifyContent: "center",
                   transition: "all 0.2s",
                 }}
-                onMouseEnter={(e) =>
-                  (e.target.style.background = `${THEME.blush}30`)
-                }
-                onMouseLeave={(e) =>
-                  (e.target.style.background = "none")
-                }
+                onMouseEnter={(e) => (e.target.style.background = `${THEME.blush}30`)}
+                onMouseLeave={(e) => (e.target.style.background = "none")}
               >
                 −
               </button>
@@ -442,56 +454,52 @@ export default function ProductDetail() {
                   justifyContent: "center",
                   transition: "all 0.2s",
                 }}
-                onMouseEnter={(e) =>
-                  (e.target.style.background = `${THEME.blush}30`)
-                }
-                onMouseLeave={(e) =>
-                  (e.target.style.background = "none")
-                }
+                onMouseEnter={(e) => (e.target.style.background = `${THEME.blush}30`)}
+                onMouseLeave={(e) => (e.target.style.background = "none")}
               >
                 +
               </button>
             </div>
           </div>
 
-          {/* Add to Cart */}
+          {/* ── Smart Add to Cart Button ── */}
           <button
             onClick={handleCart}
+            disabled={isLoading}
             style={{
               width: "100%",
               padding: "16px",
-              background: added
+              background: isAdded
                 ? `linear-gradient(135deg, ${THEME.rose}, ${THEME.burgundy})`
                 : "transparent",
-              border: `1.5px solid ${added ? "transparent" : THEME.rose}`,
-              color: added ? "white" : THEME.burgundy,
+              border: `1.5px solid ${isAdded ? "transparent" : THEME.rose}`,
+              color: isAdded ? "white" : THEME.burgundy,
               fontFamily: "'Poppins', sans-serif",
               fontSize: "11px",
               letterSpacing: "1.5px",
               textTransform: "uppercase",
-              cursor: "pointer",
+              cursor: isLoading ? "not-allowed" : "pointer",
               transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
               borderRadius: "6px",
               fontWeight: 700,
               marginBottom: "12px",
-              boxShadow: added
-                ? `0 4px 16px ${THEME.rose}30`
-                : "none",
+              opacity: isLoading ? 0.7 : 1,
+              boxShadow: isAdded ? `0 4px 16px ${THEME.rose}30` : "none",
             }}
             onMouseEnter={(e) => {
-              if (!added) {
+              if (!isAdded && !isLoading) {
                 e.target.style.background = `${THEME.blush}20`;
                 e.target.style.borderColor = THEME.burgundy;
               }
             }}
             onMouseLeave={(e) => {
-              if (!added) {
+              if (!isAdded && !isLoading) {
                 e.target.style.background = "transparent";
                 e.target.style.borderColor = THEME.rose;
               }
             }}
           >
-            {added ? "✓ Added to Cart" : "Add to Cart"}
+            {isLoading ? "Adding…" : isAdded ? "✓ Added to Cart" : "Add to Cart"}
           </button>
 
           {/* Add to Wishlist */}
@@ -589,7 +597,6 @@ export default function ProductDetail() {
               fontSize: "36px",
               fontWeight: 300,
               color: THEME.text,
-              marginBottom: "40px",
               margin: "0 0 40px 0",
               background: `linear-gradient(135deg, ${THEME.text}, ${THEME.burgundy})`,
               WebkitBackgroundClip: "text",

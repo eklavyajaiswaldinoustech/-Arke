@@ -616,7 +616,7 @@ export function RefundTimeline({ steps }) {
             </div>
             <div
               style={{
-                fontFamily: "'Poppins',sans-serif",
+                fontFamily: "'Poppins',sans-serif", 
                 fontSize: 10,
                 color: THEME.textMuted,
                 lineHeight: 1.4,

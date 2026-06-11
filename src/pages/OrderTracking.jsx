@@ -301,28 +301,33 @@ export default function OrderTracking() {
           onClose={() => setReturnModal(null)}
           onSubmit={async (returnData) => {
             try {
-              const res = await api.requestReturn(returnModal.orderId, returnData);
-              if (res?.success) {
-                setOrders((prev) =>
-                  prev.map((o) =>
-                    o.orderId === returnModal.orderId
-                      ? {
-                          ...o,
-                          status: "return_requested",
-                          returnInfo: {
-                            ...returnData,
-                            requestedAt: new Date().toISOString(),
-                          },
-                        }
-                      : o
-                  )
-                );
-                setReturnModal(null);
-                setActiveTab("returns");
-                return { success: true };
-              } else {
-                throw new Error(res?.message || "Failed to submit return request");
-              }
+              // TODO: Replace with your actual API call
+              // const res = await api.requestReturn(returnModal.orderId, returnData);
+              // if (res?.success) { ... }
+
+              console.log("Return request:", {
+                orderId: returnModal.orderId,
+                ...returnData,
+              });
+              await new Promise((r) => setTimeout(r, 1500));
+
+              setOrders((prev) =>
+                prev.map((o) =>
+                  o.orderId === returnModal.orderId
+                    ? {
+                        ...o,
+                        status: "return_requested",
+                        returnInfo: {
+                          ...returnData,
+                          requestedAt: new Date().toISOString(),
+                        },
+                      }
+                    : o
+                )
+              );
+              setReturnModal(null);
+              setActiveTab("returns");
+              return { success: true };
             } catch (err) {
               throw err;
             }

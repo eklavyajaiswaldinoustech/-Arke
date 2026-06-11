@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useToast } from "../context/ToastProvider";
 import ProductPlaceholder from "../components/Productplaceholder";
@@ -21,13 +21,19 @@ const THEME = {
   gold: "#c9a96e",
 };
 
+const MAX_QUANTITY = 4;
+
 const CHECKOUT_STEPS = [
   { id: 1, label: "Shipping", icon: "📍" },
   { id: 2, label: "Payment", icon: "💳" },
   { id: 3, label: "Review", icon: "✦" },
 ];
 
-const SAVED_ADDRESSES_KEY = "arke_saved_addresses";
+const getSavedAddressesKey = () => {
+  const user = getStoredUserInfo();
+  const userId = user?._id || user?.id || "anonymous";
+  return `arke_saved_addresses_${userId}`;
+};
 
 const emptyShippingInfo = {
   firstName: "",
@@ -71,9 +77,7 @@ const normaliseOrderItems = (cartItems) =>
       const quantity = Math.max(1, Number(item.quantity || item.qty || 1));
       const price = Number(product.price || product.salePrice || item.price || item.salePrice || 0);
       const image = getProductImage(product);
-
       if (!productId) return null;
-
       return {
         productId,
         product: productId,
@@ -98,7 +102,6 @@ const getStoredUserInfo = () => {
 const createInitialShippingInfo = () => {
   const user = getStoredUserInfo();
   const [firstName = "", ...lastParts] = String(user.name || "").trim().split(/\s+/).filter(Boolean);
-
   return {
     ...emptyShippingInfo,
     firstName: user.firstname || user.firstName || firstName,
@@ -110,7 +113,7 @@ const createInitialShippingInfo = () => {
 
 const getSavedAddresses = () => {
   try {
-    const saved = JSON.parse(localStorage.getItem(SAVED_ADDRESSES_KEY));
+    const saved = JSON.parse(localStorage.getItem(getSavedAddressesKey()));
     return Array.isArray(saved) ? saved.filter(Boolean) : [];
   } catch {
     return [];
@@ -119,7 +122,6 @@ const getSavedAddresses = () => {
 
 const saveCheckoutAddress = (shippingInfo) => {
   if (!shippingInfo.saveAddress) return [];
-
   const addressToSave = {
     id: `${Date.now()}`,
     firstName: shippingInfo.firstName.trim(),
@@ -133,36 +135,20 @@ const saveCheckoutAddress = (shippingInfo) => {
     pincode: shippingInfo.pincode.trim(),
     saveAddress: false,
   };
-
-  const signature = (address) =>
-    [address.address, address.apartment, address.city, address.state, address.pincode, address.phone]
-      .filter(Boolean)
-      .join("|")
-      .toLowerCase();
-
+  const signature = (a) =>
+    [a.address, a.apartment, a.city, a.state, a.pincode, a.phone].filter(Boolean).join("|").toLowerCase();
   const next = [
     addressToSave,
-    ...getSavedAddresses().filter((address) => signature(address) !== signature(addressToSave)),
+    ...getSavedAddresses().filter((a) => signature(a) !== signature(addressToSave)),
   ].slice(0, 4);
-
-  localStorage.setItem(SAVED_ADDRESSES_KEY, JSON.stringify(next));
+  localStorage.setItem(getSavedAddressesKey(), JSON.stringify(next));
   return next;
 };
 
 /* ================================================================== */
 /*  CHECKOUT MODAL                                                     */
 /* ================================================================== */
-function CheckoutModal({
-  isOpen,
-  onClose,
-  items,
-  subtotal,
-  discountAmount,
-  shipping,
-  total,
-  appliedCoupon,
-  clearCart,
-}) {
+function CheckoutModal({ isOpen, onClose, items, subtotal, discountAmount, shipping, total, appliedCoupon, clearCart }) {
   const navigate = useNavigate();
   const modalRef = useRef(null);
   const { success, error: showError } = useToast();
@@ -176,9 +162,7 @@ function CheckoutModal({
   const [touchedFields, setTouchedFields] = useState({});
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
-
   const [shippingInfo, setShippingInfo] = useState(createInitialShippingInfo);
-
   const [paymentInfo, setPaymentInfo] = useState({
     method: "card",
     cardNumber: "",
@@ -204,15 +188,11 @@ function CheckoutModal({
       setAnimateIn(false);
       document.body.style.overflow = "";
     }
-    return () => {
-      document.body.style.overflow = "";
-    };
+    return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
 
   useEffect(() => {
-    const handleEsc = (e) => {
-      if (e.key === "Escape" && !isProcessing) handleClose();
-    };
+    const handleEsc = (e) => { if (e.key === "Escape" && !isProcessing) handleClose(); };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, [isProcessing]);
@@ -238,22 +218,16 @@ function CheckoutModal({
     if (!shippingInfo.firstName.trim()) e.firstName = "First name is required";
     if (!shippingInfo.lastName.trim()) e.lastName = "Last name is required";
     if (!shippingInfo.email.trim()) e.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shippingInfo.email))
-      e.email = "Invalid email format";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shippingInfo.email)) e.email = "Invalid email format";
     if (!shippingInfo.phone.trim()) e.phone = "Phone is required";
-    else if (!/^[6-9]\d{9}$/.test(shippingInfo.phone.replace(/\s/g, "")))
-      e.phone = "Invalid phone number";
+    else if (!/^[6-9]\d{9}$/.test(shippingInfo.phone.replace(/\s/g, ""))) e.phone = "Invalid phone number";
     if (!shippingInfo.address.trim()) e.address = "Address is required";
     if (!shippingInfo.city.trim()) e.city = "City is required";
     if (!shippingInfo.state.trim()) e.state = "State is required";
     if (!shippingInfo.pincode.trim()) e.pincode = "Pincode is required";
-    else if (!/^\d{6}$/.test(shippingInfo.pincode))
-      e.pincode = "Invalid pincode";
+    else if (!/^\d{6}$/.test(shippingInfo.pincode)) e.pincode = "Invalid pincode";
     setErrors(e);
-    setTouchedFields((prev) => ({
-      ...prev,
-      ...Object.fromEntries(Object.keys(e).map((field) => [field, true])),
-    }));
+    setTouchedFields((prev) => ({ ...prev, ...Object.fromEntries(Object.keys(e).map((f) => [f, true])) }));
     return Object.keys(e).length === 0;
   };
 
@@ -265,8 +239,7 @@ function CheckoutModal({
       else if (raw.length < 16) e.cardNumber = "Invalid card number";
       if (!paymentInfo.cardName.trim()) e.cardName = "Name on card is required";
       if (!paymentInfo.expiry.trim()) e.expiry = "Expiry is required";
-      else if (!/^\d{2}\/\d{2}$/.test(paymentInfo.expiry))
-        e.expiry = "Use MM/YY format";
+      else if (!/^\d{2}\/\d{2}$/.test(paymentInfo.expiry)) e.expiry = "Use MM/YY format";
       if (!paymentInfo.cvv.trim()) e.cvv = "CVV is required";
       else if (!/^\d{3,4}$/.test(paymentInfo.cvv)) e.cvv = "Invalid CVV";
     } else if (paymentInfo.method === "upi") {
@@ -274,10 +247,7 @@ function CheckoutModal({
       else if (!paymentInfo.upiId.includes("@")) e.upiId = "Invalid UPI ID";
     }
     setErrors(e);
-    setTouchedFields((prev) => ({
-      ...prev,
-      ...Object.fromEntries(Object.keys(e).map((field) => [field, true])),
-    }));
+    setTouchedFields((prev) => ({ ...prev, ...Object.fromEntries(Object.keys(e).map((f) => [f, true])) }));
     return Object.keys(e).length === 0;
   };
 
@@ -314,17 +284,13 @@ function CheckoutModal({
     setShippingInfo(createInitialShippingInfo());
   };
 
-  /* ── REAL ORDER PLACEMENT ── */
   const handlePlaceOrder = async () => {
     try {
       const orderItems = normaliseOrderItems(items);
-
       if (orderItems.length === 0 || orderItems.length !== items.length) {
         throw new Error("Some cart items are missing product details. Please refresh the cart and try again.");
       }
-
       setIsProcessing(true);
-
       const shippingAddress = {
         firstName: shippingInfo.firstName.trim(),
         lastName: shippingInfo.lastName.trim(),
@@ -337,7 +303,6 @@ function CheckoutModal({
         state: shippingInfo.state.trim(),
         pincode: shippingInfo.pincode.trim(),
       };
-
       const orderPayload = {
         products: orderItems,
         items: orderItems,
@@ -354,7 +319,6 @@ function CheckoutModal({
         total,
         couponCode: appliedCoupon?.code || appliedCoupon?.offercode || undefined,
       };
-
       const response = await fetch(`${API_BASE}/place-order`, {
         method: "POST",
         headers: {
@@ -364,36 +328,23 @@ function CheckoutModal({
         },
         body: JSON.stringify(orderPayload),
       });
-
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.message || `Order failed (${response.status})`);
       }
-
       const data = await response.json();
-
-      if (data?.success === false) {
-        throw new Error(data.message || "Order failed. Please try again.");
-      }
-
-      if (shippingInfo.saveAddress) {
-        setSavedAddresses(saveCheckoutAddress(shippingInfo));
-      }
-
+      if (data?.success === false) throw new Error(data.message || "Order failed. Please try again.");
+      if (shippingInfo.saveAddress) setSavedAddresses(saveCheckoutAddress(shippingInfo));
       const realOrderId =
         data?.order?.orderNumber ||
         data?.orderNumber ||
         data?.data?.orderNumber ||
-        (data?.order?._id
-          ? "ARK-" + data.order._id.slice(-6).toUpperCase()
-          : null) ||
+        (data?.order?._id ? "ARK-" + data.order._id.slice(-6).toUpperCase() : null) ||
         (data?._id ? "ARK-" + data._id.slice(-6).toUpperCase() : null) ||
         "ARK-" + Date.now().toString(36).toUpperCase();
-
       setOrderId(realOrderId);
       setOrderPlaced(true);
       success("Order placed successfully! 🎉");
-
       if (clearCart) clearCart();
     } catch (err) {
       console.error("handlePlaceOrder error:", err);
@@ -404,12 +355,7 @@ function CheckoutModal({
   };
 
   const formatCardNumber = (v) =>
-    v
-      .replace(/\D/g, "")
-      .slice(0, 16)
-      .replace(/(.{4})/g, "$1 ")
-      .trim();
-
+    v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
   const formatExpiry = (v) => {
     const c = v.replace(/\D/g, "").slice(0, 4);
     return c.length >= 3 ? c.slice(0, 2) + "/" + c.slice(2) : c;
@@ -459,76 +405,36 @@ function CheckoutModal({
           0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(232,180,196,0.4); }
           50%     { transform:scale(1.06); box-shadow:0 0 0 8px rgba(232,180,196,0); }
         }
-        @keyframes spinLoader {
-          to { transform:rotate(360deg); }
-        }
-        @keyframes progressFill {
-          from { width:0%; }
-          to   { width:100%; }
-        }
+        @keyframes spinLoader { to { transform:rotate(360deg); } }
         @keyframes slideRight {
           from { opacity:0; transform:translateX(28px); }
           to   { opacity:1; transform:translateX(0); }
         }
-
         .modal-scroll::-webkit-scrollbar { width:5px; }
         .modal-scroll::-webkit-scrollbar-track { background:transparent; }
-        .modal-scroll::-webkit-scrollbar-thumb {
-          background:${THEME.border}; border-radius:3px;
-        }
-        .modal-scroll::-webkit-scrollbar-thumb:hover {
-          background:${THEME.rose};
-        }
-
+        .modal-scroll::-webkit-scrollbar-thumb { background:${THEME.border}; border-radius:3px; }
+        .modal-scroll::-webkit-scrollbar-thumb:hover { background:${THEME.rose}; }
         .co-input {
-          width:100%;
-          background:${THEME.blush}18;
-          border:1.5px solid ${THEME.border};
-          color:${THEME.text};
-          padding:13px 15px;
-          font-family:'Poppins',sans-serif;
-          font-size:13px;
-          outline:none;
-          border-radius:8px;
-          transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);
-          box-sizing:border-box;
+          width:100%; background:${THEME.blush}18; border:1.5px solid ${THEME.border};
+          color:${THEME.text}; padding:13px 15px; font-family:'Poppins',sans-serif;
+          font-size:13px; outline:none; border-radius:8px;
+          transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1); box-sizing:border-box;
         }
-        .co-input:focus {
-          border-color:${THEME.rose};
-          background:${THEME.blush}28;
-          box-shadow:0 0 0 4px ${THEME.rose}18;
-        }
-        .co-input.err {
-          border-color:${THEME.error};
-          background:${THEME.error}08;
-        }
+        .co-input:focus { border-color:${THEME.rose}; background:${THEME.blush}28; box-shadow:0 0 0 4px ${THEME.rose}18; }
+        .co-input.err { border-color:${THEME.error}; background:${THEME.error}08; }
         .co-input::placeholder { color:${THEME.textMuted}; font-size:12px; }
-
         .pm-card {
-          cursor:pointer;
-          border:1.5px solid ${THEME.border};
-          border-radius:10px;
-          padding:15px 18px;
-          display:flex;
-          align-items:center;
-          gap:14px;
-          transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);
-          background:${THEME.surface};
-          user-select:none;
+          cursor:pointer; border:1.5px solid ${THEME.border}; border-radius:10px;
+          padding:15px 18px; display:flex; align-items:center; gap:14px;
+          transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1); background:${THEME.surface}; user-select:none;
         }
-        .pm-card:hover {
-          border-color:${THEME.rose};
-          transform:translateY(-2px);
-          box-shadow:0 6px 20px ${THEME.rose}22;
-        }
+        .pm-card:hover { border-color:${THEME.rose}; transform:translateY(-2px); box-shadow:0 6px 20px ${THEME.rose}22; }
         .pm-card.active {
           border-color:${THEME.burgundy};
           background:linear-gradient(135deg,${THEME.blush}22,${THEME.champagne}14);
           box-shadow:0 4px 18px ${THEME.rose}28;
         }
-
         .step-slide { animation:slideRight 0.38s cubic-bezier(0.34,1.56,0.64,1); }
-
         @media (max-width:680px) {
           .co-two-col { grid-template-columns:1fr !important; }
           .co-modal { width:100% !important; max-height:95vh !important; }
@@ -551,78 +457,45 @@ function CheckoutModal({
           display: "flex",
           flexDirection: "column",
           boxShadow: `0 32px 90px rgba(0,0,0,0.18), 0 0 0 1px ${THEME.border}`,
-          transform: animateIn
-            ? "translateY(0) scale(1)"
-            : "translateY(48px) scale(0.94)",
+          transform: animateIn ? "translateY(0) scale(1)" : "translateY(48px) scale(0.94)",
           opacity: animateIn ? 1 : 0,
           transition: "all 0.45s cubic-bezier(0.34,1.56,0.64,1)",
         }}
       >
         {orderPlaced ? (
-          <OrderSuccess
-            orderId={orderId}
-            onClose={handleClose}
-            navigate={navigate}
-          />
+          <OrderSuccess orderId={orderId} onClose={handleClose} navigate={navigate} />
         ) : (
           <>
-            <ModalHeader
-              currentStep={currentStep}
-              onClose={handleClose}
-              isProcessing={isProcessing}
-            />
-            <div
-              className="modal-scroll co-body"
-              style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}
-            >
+            <ModalHeader currentStep={currentStep} onClose={handleClose} isProcessing={isProcessing} />
+            <div className="modal-scroll co-body" style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
               {currentStep === 1 && (
                 <ShippingStep
-                  info={shippingInfo}
-                  onChange={handleShippingChange}
-                  errors={errors}
-                  touched={touchedFields}
-                  onBlur={(f) =>
-                    setTouchedFields((p) => ({ ...p, [f]: true }))
-                  }
-                  savedAddresses={savedAddresses}
-                  selectedAddressId={selectedAddressId}
-                  onSelectSavedAddress={handleSavedAddressSelect}
-                  onUseNewAddress={handleUseNewAddress}
+                  info={shippingInfo} onChange={handleShippingChange}
+                  errors={errors} touched={touchedFields}
+                  onBlur={(f) => setTouchedFields((p) => ({ ...p, [f]: true }))}
+                  savedAddresses={savedAddresses} selectedAddressId={selectedAddressId}
+                  onSelectSavedAddress={handleSavedAddressSelect} onUseNewAddress={handleUseNewAddress}
                 />
               )}
               {currentStep === 2 && (
                 <PaymentStep
-                  info={paymentInfo}
-                  onChange={setPaymentInfo}
-                  errors={errors}
-                  touched={touchedFields}
-                  onBlur={(f) =>
-                    setTouchedFields((p) => ({ ...p, [f]: true }))
-                  }
-                  formatCardNumber={formatCardNumber}
-                  formatExpiry={formatExpiry}
+                  info={paymentInfo} onChange={setPaymentInfo}
+                  errors={errors} touched={touchedFields}
+                  onBlur={(f) => setTouchedFields((p) => ({ ...p, [f]: true }))}
+                  formatCardNumber={formatCardNumber} formatExpiry={formatExpiry}
                 />
               )}
               {currentStep === 3 && (
                 <ReviewStep
-                  items={items}
-                  shippingInfo={shippingInfo}
-                  paymentInfo={paymentInfo}
-                  subtotal={subtotal}
-                  discountAmount={discountAmount}
-                  shipping={shipping}
-                  total={total}
-                  appliedCoupon={appliedCoupon}
+                  items={items} shippingInfo={shippingInfo} paymentInfo={paymentInfo}
+                  subtotal={subtotal} discountAmount={discountAmount}
+                  shipping={shipping} total={total} appliedCoupon={appliedCoupon}
                 />
               )}
             </div>
             <ModalFooter
-              currentStep={currentStep}
-              onBack={handleBack}
-              onNext={handleNext}
-              onPlaceOrder={handlePlaceOrder}
-              isProcessing={isProcessing}
-              total={total}
+              currentStep={currentStep} onBack={handleBack} onNext={handleNext}
+              onPlaceOrder={handlePlaceOrder} isProcessing={isProcessing} total={total}
             />
           </>
         )}
@@ -636,183 +509,42 @@ function CheckoutModal({
 /* ------------------------------------------------------------------ */
 function ModalHeader({ currentStep, onClose, isProcessing }) {
   return (
-    <div
-      className="co-head"
-      style={{
-        padding: "26px 40px 22px",
-        borderBottom: `1.5px solid ${THEME.border}`,
-        background: THEME.surface,
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 22,
-        }}
-      >
+    <div className="co-head" style={{ padding: "26px 40px 22px", borderBottom: `1.5px solid ${THEME.border}`, background: THEME.surface, flexShrink: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 }}>
         <div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 5,
-            }}
-          >
-            <div
-              style={{
-                width: 22,
-                height: 1.5,
-                background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})`,
-              }}
-            />
-            <span
-              style={{
-                fontFamily: "'Poppins',sans-serif",
-                fontSize: 9,
-                letterSpacing: "2px",
-                textTransform: "uppercase",
-                color: THEME.burgundy,
-                fontWeight: 700,
-              }}
-            >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
+            <div style={{ width: 22, height: 1.5, background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})` }} />
+            <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 9, letterSpacing: "2px", textTransform: "uppercase", color: THEME.burgundy, fontWeight: 700 }}>
               Secure Checkout
             </span>
           </div>
-          <h2
-            style={{
-              fontFamily: "'Cormorant Garamond',serif",
-              fontSize: 26,
-              fontWeight: 300,
-              margin: 0,
-              background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`,
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-            }}
-          >
+          <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 26, fontWeight: 300, margin: 0, background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
             {CHECKOUT_STEPS.find((s) => s.id === currentStep)?.label}
           </h2>
         </div>
-
         <button
-          onClick={onClose}
-          disabled={isProcessing}
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: "50%",
-            border: `1.5px solid ${THEME.border}`,
-            background: THEME.surface,
-            color: THEME.textMuted,
-            cursor: isProcessing ? "not-allowed" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 16,
-            transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-            flexShrink: 0,
-          }}
-          onMouseEnter={(e) => {
-            if (!isProcessing) {
-              e.currentTarget.style.borderColor = THEME.rose;
-              e.currentTarget.style.color = THEME.burgundy;
-              e.currentTarget.style.transform = "rotate(90deg)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = THEME.border;
-            e.currentTarget.style.color = THEME.textMuted;
-            e.currentTarget.style.transform = "rotate(0deg)";
-          }}
+          onClick={onClose} disabled={isProcessing}
+          style={{ width: 38, height: 38, borderRadius: "50%", border: `1.5px solid ${THEME.border}`, background: THEME.surface, color: THEME.textMuted, cursor: isProcessing ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)", flexShrink: 0 }}
+          onMouseEnter={(e) => { if (!isProcessing) { e.currentTarget.style.borderColor = THEME.rose; e.currentTarget.style.color = THEME.burgundy; e.currentTarget.style.transform = "rotate(90deg)"; } }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.color = THEME.textMuted; e.currentTarget.style.transform = "rotate(0deg)"; }}
         >
           ✕
         </button>
       </div>
-
       <div style={{ display: "flex", alignItems: "center" }}>
         {CHECKOUT_STEPS.map((step, i) => (
-          <div
-            key={step.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              flex: i < CHECKOUT_STEPS.length - 1 ? 1 : "none",
-            }}
-          >
+          <div key={step.id} style={{ display: "flex", alignItems: "center", flex: i < CHECKOUT_STEPS.length - 1 ? 1 : "none" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <div
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 13,
-                  fontFamily: "'Poppins',sans-serif",
-                  fontWeight: 700,
-                  transition: "all 0.4s cubic-bezier(0.34,1.56,0.64,1)",
-                  flexShrink: 0,
-                  ...(currentStep > step.id
-                    ? {
-                        background: `linear-gradient(135deg,${THEME.success},#59b661)`,
-                        color: "white",
-                        boxShadow: `0 4px 12px ${THEME.success}44`,
-                      }
-                    : currentStep === step.id
-                    ? {
-                        background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-                        color: "white",
-                        boxShadow: `0 4px 14px ${THEME.rose}44`,
-                        animation: "pulseRing 2s ease-in-out infinite",
-                      }
-                    : {
-                        background: `${THEME.blush}28`,
-                        color: THEME.textMuted,
-                        border: `1.5px solid ${THEME.border}`,
-                      }),
-                }}
-              >
+              <div style={{ width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontFamily: "'Poppins',sans-serif", fontWeight: 700, transition: "all 0.4s cubic-bezier(0.34,1.56,0.64,1)", flexShrink: 0, ...(currentStep > step.id ? { background: `linear-gradient(135deg,${THEME.success},#59b661)`, color: "white", boxShadow: `0 4px 12px ${THEME.success}44` } : currentStep === step.id ? { background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, color: "white", boxShadow: `0 4px 14px ${THEME.rose}44`, animation: "pulseRing 2s ease-in-out infinite" } : { background: `${THEME.blush}28`, color: THEME.textMuted, border: `1.5px solid ${THEME.border}` }) }}>
                 {currentStep > step.id ? "✓" : step.icon}
               </div>
-              <span
-                style={{
-                  fontFamily: "'Poppins',sans-serif",
-                  fontSize: 11,
-                  fontWeight: currentStep === step.id ? 700 : 500,
-                  color: currentStep >= step.id ? THEME.text : THEME.textMuted,
-                  letterSpacing: "0.4px",
-                  whiteSpace: "nowrap",
-                  transition: "all 0.3s",
-                }}
-              >
+              <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, fontWeight: currentStep === step.id ? 700 : 500, color: currentStep >= step.id ? THEME.text : THEME.textMuted, letterSpacing: "0.4px", whiteSpace: "nowrap", transition: "all 0.3s" }}>
                 {step.label}
               </span>
             </div>
             {i < CHECKOUT_STEPS.length - 1 && (
-              <div
-                style={{
-                  flex: 1,
-                  height: 2,
-                  margin: "0 14px",
-                  borderRadius: 1,
-                  background: THEME.border,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: currentStep > step.id ? "100%" : "0%",
-                    background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})`,
-                    borderRadius: 1,
-                    transition: "width 0.6s cubic-bezier(0.34,1.56,0.64,1)",
-                  }}
-                />
+              <div style={{ flex: 1, height: 2, margin: "0 14px", borderRadius: 1, background: THEME.border, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: currentStep > step.id ? "100%" : "0%", background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})`, borderRadius: 1, transition: "width 0.6s cubic-bezier(0.34,1.56,0.64,1)" }} />
               </div>
             )}
           </div>
@@ -827,151 +559,25 @@ function ModalHeader({ currentStep, onClose, isProcessing }) {
 /* ------------------------------------------------------------------ */
 function ModalFooter({ currentStep, onBack, onNext, onPlaceOrder, isProcessing, total }) {
   return (
-    <div
-      className="co-foot"
-      style={{
-        padding: "18px 40px",
-        borderTop: `1.5px solid ${THEME.border}`,
-        background: THEME.surface,
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: 14,
-        flexShrink: 0,
-      }}
-    >
+    <div className="co-foot" style={{ padding: "18px 40px", borderTop: `1.5px solid ${THEME.border}`, background: THEME.surface, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexShrink: 0 }}>
       {currentStep > 1 ? (
-        <button
-          onClick={onBack}
-          disabled={isProcessing}
-          style={{
-            padding: "12px 26px",
-            background: "transparent",
-            border: `1.5px solid ${THEME.border}`,
-            color: THEME.text,
-            fontFamily: "'Poppins',sans-serif",
-            fontSize: 11,
-            letterSpacing: "1px",
-            textTransform: "uppercase",
-            cursor: isProcessing ? "not-allowed" : "pointer",
-            borderRadius: 8,
-            fontWeight: 600,
-            transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-          }}
-          onMouseEnter={(e) => {
-            if (!isProcessing) {
-              e.currentTarget.style.borderColor = THEME.rose;
-              e.currentTarget.style.color = THEME.burgundy;
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = THEME.border;
-            e.currentTarget.style.color = THEME.text;
-          }}
-        >
+        <button onClick={onBack} disabled={isProcessing} style={{ padding: "12px 26px", background: "transparent", border: `1.5px solid ${THEME.border}`, color: THEME.text, fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1px", textTransform: "uppercase", cursor: isProcessing ? "not-allowed" : "pointer", borderRadius: 8, fontWeight: 600, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)" }} onMouseEnter={(e) => { if (!isProcessing) { e.currentTarget.style.borderColor = THEME.rose; e.currentTarget.style.color = THEME.burgundy; } }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.color = THEME.text; }}>
           ← Back
         </button>
-      ) : (
-        <div />
-      )}
-
+      ) : <div />}
       <div style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.6 }}>
         <span style={{ fontSize: 12 }}>🔒</span>
-        <span
-          style={{
-            fontFamily: "'Poppins',sans-serif",
-            fontSize: 9,
-            color: THEME.textMuted,
-            letterSpacing: "0.5px",
-          }}
-        >
-          SSL Encrypted
-        </span>
+        <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 9, color: THEME.textMuted, letterSpacing: "0.5px" }}>SSL Encrypted</span>
       </div>
-
       {currentStep < 3 ? (
-        <button
-          onClick={onNext}
-          style={{
-            padding: "13px 38px",
-            background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-            color: "white",
-            border: "none",
-            fontFamily: "'Poppins',sans-serif",
-            fontSize: 11,
-            letterSpacing: "1.5px",
-            textTransform: "uppercase",
-            cursor: "pointer",
-            fontWeight: 700,
-            borderRadius: 8,
-            transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-            boxShadow: `0 4px 16px ${THEME.rose}32`,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-2px)";
-            e.currentTarget.style.boxShadow = `0 8px 24px ${THEME.rose}44`;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.boxShadow = `0 4px 16px ${THEME.rose}32`;
-          }}
-        >
+        <button onClick={onNext} style={{ padding: "13px 38px", background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, color: "white", border: "none", fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", cursor: "pointer", fontWeight: 700, borderRadius: 8, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)", boxShadow: `0 4px 16px ${THEME.rose}32` }} onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px ${THEME.rose}44`; }} onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 4px 16px ${THEME.rose}32`; }}>
           Continue →
         </button>
       ) : (
-        <button
-          onClick={onPlaceOrder}
-          disabled={isProcessing}
-          style={{
-            padding: "13px 32px",
-            background: isProcessing
-              ? THEME.textMuted
-              : `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-            color: "white",
-            border: "none",
-            fontFamily: "'Poppins',sans-serif",
-            fontSize: 11,
-            letterSpacing: "1.5px",
-            textTransform: "uppercase",
-            cursor: isProcessing ? "not-allowed" : "pointer",
-            fontWeight: 700,
-            borderRadius: 8,
-            transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-            boxShadow: isProcessing ? "none" : `0 4px 16px ${THEME.rose}32`,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-          onMouseEnter={(e) => {
-            if (!isProcessing) {
-              e.currentTarget.style.transform = "translateY(-2px)";
-              e.currentTarget.style.boxShadow = `0 8px 24px ${THEME.rose}44`;
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isProcessing) {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = `0 4px 16px ${THEME.rose}32`;
-            }
-          }}
-        >
+        <button onClick={onPlaceOrder} disabled={isProcessing} style={{ padding: "13px 32px", background: isProcessing ? THEME.textMuted : `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, color: "white", border: "none", fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", cursor: isProcessing ? "not-allowed" : "pointer", fontWeight: 700, borderRadius: 8, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)", boxShadow: isProcessing ? "none" : `0 4px 16px ${THEME.rose}32`, display: "flex", alignItems: "center", gap: 10 }} onMouseEnter={(e) => { if (!isProcessing) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px ${THEME.rose}44`; } }} onMouseLeave={(e) => { if (!isProcessing) { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 4px 16px ${THEME.rose}32`; } }}>
           {isProcessing ? (
-            <>
-              <div
-                style={{
-                  width: 15,
-                  height: 15,
-                  border: "2px solid rgba(255,255,255,0.35)",
-                  borderTopColor: "white",
-                  borderRadius: "50%",
-                  animation: "spinLoader 0.75s linear infinite",
-                }}
-              />
-              Processing…
-            </>
-          ) : (
-            `Place Order  ₹${total.toLocaleString("en-IN")}`
-          )}
+            <><div style={{ width: 15, height: 15, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "white", borderRadius: "50%", animation: "spinLoader 0.75s linear infinite" }} />Processing…</>
+          ) : `Place Order  ₹${total.toLocaleString("en-IN")}`}
         </button>
       )}
     </div>
@@ -981,260 +587,59 @@ function ModalFooter({ currentStep, onBack, onNext, onPlaceOrder, isProcessing, 
 /* ------------------------------------------------------------------ */
 /*  Step 1 – Shipping                                                  */
 /* ------------------------------------------------------------------ */
-function ShippingStep({
-  info,
-  onChange,
-  errors,
-  touched,
-  onBlur,
-  savedAddresses,
-  selectedAddressId,
-  onSelectSavedAddress,
-  onUseNewAddress,
-}) {
-  const set = (field, value) =>
-    onChange((prev) => ({ ...prev, [field]: value }));
-
+function ShippingStep({ info, onChange, errors, touched, onBlur, savedAddresses, selectedAddressId, onSelectSavedAddress, onUseNewAddress }) {
+  const set = (field, value) => onChange((prev) => ({ ...prev, [field]: value }));
   return (
     <div className="step-slide">
       {savedAddresses.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <SectionLabel text="Saved Addresses" />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
+          <SectionLabel text="Your Saved Addresses" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
             {savedAddresses.map((address) => {
               const active = selectedAddressId === address.id;
               return (
-                <button
-                  key={address.id}
-                  type="button"
-                  onClick={() => onSelectSavedAddress(address)}
-                  style={{
-                    textAlign: "left",
-                    border: `1.5px solid ${active ? THEME.burgundy : THEME.border}`,
-                    background: active
-                      ? `linear-gradient(135deg,${THEME.blush}28,${THEME.champagne}18)`
-                      : THEME.surface,
-                    borderRadius: 10,
-                    padding: "14px 16px",
-                    cursor: "pointer",
-                    transition: "all 0.25s ease",
-                    boxShadow: active ? `0 8px 22px ${THEME.rose}22` : "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 10,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontFamily: "'Poppins',sans-serif",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: THEME.text,
-                      }}
-                    >
-                      {address.firstName} {address.lastName}
-                    </span>
-                    {active && (
-                      <span
-                        style={{
-                          color: THEME.burgundy,
-                          fontFamily: "'Poppins',sans-serif",
-                          fontSize: 10,
-                          fontWeight: 700,
-                        }}
-                      >
-                        ✓
-                      </span>
-                    )}
+                <button key={address.id} type="button" onClick={() => onSelectSavedAddress(address)} style={{ textAlign: "left", border: `1.5px solid ${active ? THEME.burgundy : THEME.border}`, background: active ? `linear-gradient(135deg,${THEME.blush}28,${THEME.champagne}18)` : THEME.surface, borderRadius: 10, padding: "14px 16px", cursor: "pointer", transition: "all 0.25s ease", boxShadow: active ? `0 8px 22px ${THEME.rose}22` : "none" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                    <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 12, fontWeight: 700, color: THEME.text }}>{address.firstName} {address.lastName}</span>
+                    {active && <span style={{ color: THEME.burgundy, fontFamily: "'Poppins',sans-serif", fontSize: 10, fontWeight: 700 }}>✓</span>}
                   </div>
-                  <p
-                    style={{
-                      fontFamily: "'Poppins',sans-serif",
-                      fontSize: 11,
-                      color: THEME.textMuted,
-                      lineHeight: 1.55,
-                      margin: 0,
-                    }}
-                  >
-                    {address.address}
-                    {address.apartment ? `, ${address.apartment}` : ""}
-                    <br />
+                  <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, lineHeight: 1.55, margin: 0 }}>
+                    {address.address}{address.apartment ? `, ${address.apartment}` : ""}<br />
                     {address.city}, {address.state} {address.pincode}
                   </p>
                 </button>
               );
             })}
-            <button
-              type="button"
-              onClick={onUseNewAddress}
-              style={{
-                border: `1.5px dashed ${THEME.rose}`,
-                background: `${THEME.blush}10`,
-                color: THEME.burgundy,
-                borderRadius: 10,
-                padding: "14px 16px",
-                cursor: "pointer",
-                fontFamily: "'Poppins',sans-serif",
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "1px",
-                textTransform: "uppercase",
-              }}
-            >
+            <button type="button" onClick={onUseNewAddress} style={{ border: `1.5px dashed ${THEME.rose}`, background: `${THEME.blush}10`, color: THEME.burgundy, borderRadius: 10, padding: "14px 16px", cursor: "pointer", fontFamily: "'Poppins',sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase" }}>
               + New Address
             </button>
           </div>
         </div>
       )}
-
       <SectionLabel text={selectedAddressId ? "Edit Delivery Details" : "Delivery Details"} />
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}
-        className="co-two-col"
-      >
-        <CoInput
-          label="First Name" placeholder="Arya" icon="👤"
-          value={info.firstName} onChange={(v) => set("firstName", v)}
-          error={errors.firstName} touched={touched.firstName}
-          onBlur={() => onBlur("firstName")}
-        />
-        <CoInput
-          label="Last Name" placeholder="Sharma"
-          value={info.lastName} onChange={(v) => set("lastName", v)}
-          error={errors.lastName} touched={touched.lastName}
-          onBlur={() => onBlur("lastName")}
-        />
-        <CoInput
-          label="Email Address" placeholder="you@example.com" icon="✉" type="email"
-          value={info.email} onChange={(v) => set("email", v)}
-          error={errors.email} touched={touched.email}
-          onBlur={() => onBlur("email")} full
-        />
-        <CoInput
-          label="Phone Number" placeholder="9876543210" icon="📱"
-          value={info.phone}
-          onChange={(v) => set("phone", v.replace(/\D/g, "").slice(0, 10))}
-          error={errors.phone} touched={touched.phone}
-          onBlur={() => onBlur("phone")} full
-        />
-        <CoInput
-          label="Street Address" placeholder="123, Rose Garden Lane" icon="🏠"
-          value={info.address} onChange={(v) => set("address", v)}
-          error={errors.address} touched={touched.address}
-          onBlur={() => onBlur("address")} full
-        />
-        <CoInput
-          label="Apartment / Suite (Optional)" placeholder="Apt 4B, Floor 2"
-          value={info.apartment} onChange={(v) => set("apartment", v)} full
-        />
-        <CoInput
-          label="City" placeholder="Mumbai"
-          value={info.city} onChange={(v) => set("city", v)}
-          error={errors.city} touched={touched.city}
-          onBlur={() => onBlur("city")}
-        />
-        <CoInput
-          label="State" placeholder="Maharashtra"
-          value={info.state} onChange={(v) => set("state", v)}
-          error={errors.state} touched={touched.state}
-          onBlur={() => onBlur("state")}
-        />
-        <CoInput
-          label="Pincode" placeholder="400001" icon="📮"
-          value={info.pincode}
-          onChange={(v) => set("pincode", v.replace(/\D/g, "").slice(0, 6))}
-          error={errors.pincode} touched={touched.pincode}
-          onBlur={() => onBlur("pincode")}
-        />
-
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="co-two-col">
+        <CoInput label="First Name" placeholder="Arya" icon="👤" value={info.firstName} onChange={(v) => set("firstName", v)} error={errors.firstName} touched={touched.firstName} onBlur={() => onBlur("firstName")} />
+        <CoInput label="Last Name" placeholder="Sharma" value={info.lastName} onChange={(v) => set("lastName", v)} error={errors.lastName} touched={touched.lastName} onBlur={() => onBlur("lastName")} />
+        <CoInput label="Email Address" placeholder="you@example.com" icon="✉" type="email" value={info.email} onChange={(v) => set("email", v)} error={errors.email} touched={touched.email} onBlur={() => onBlur("email")} full />
+        <CoInput label="Phone Number" placeholder="9876543210" icon="📱" value={info.phone} onChange={(v) => set("phone", v.replace(/\D/g, "").slice(0, 10))} error={errors.phone} touched={touched.phone} onBlur={() => onBlur("phone")} full />
+        <CoInput label="Street Address" placeholder="123, Rose Garden Lane" icon="🏠" value={info.address} onChange={(v) => set("address", v)} error={errors.address} touched={touched.address} onBlur={() => onBlur("address")} full />
+        <CoInput label="Apartment / Suite (Optional)" placeholder="Apt 4B, Floor 2" value={info.apartment} onChange={(v) => set("apartment", v)} full />
+        <CoInput label="City" placeholder="Mumbai" value={info.city} onChange={(v) => set("city", v)} error={errors.city} touched={touched.city} onBlur={() => onBlur("city")} />
+        <CoInput label="State" placeholder="Maharashtra" value={info.state} onChange={(v) => set("state", v)} error={errors.state} touched={touched.state} onBlur={() => onBlur("state")} />
+        <CoInput label="Pincode" placeholder="400001" icon="📮" value={info.pincode} onChange={(v) => set("pincode", v.replace(/\D/g, "").slice(0, 6))} error={errors.pincode} touched={touched.pincode} onBlur={() => onBlur("pincode")} />
         <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              cursor: "pointer",
-              padding: "11px 15px",
-              borderRadius: 8,
-              border: `1.5px solid ${info.saveAddress ? THEME.rose : THEME.border}`,
-              background: info.saveAddress ? `${THEME.blush}20` : "transparent",
-              transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-            }}
-          >
-            <div
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: 4,
-                border: `2px solid ${info.saveAddress ? THEME.burgundy : THEME.border}`,
-                background: info.saveAddress
-                  ? `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`
-                  : "transparent",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.3s",
-                flexShrink: 0,
-              }}
-            >
-              {info.saveAddress && (
-                <span style={{ color: "white", fontSize: 11 }}>✓</span>
-              )}
+          <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", padding: "11px 15px", borderRadius: 8, border: `1.5px solid ${info.saveAddress ? THEME.rose : THEME.border}`, background: info.saveAddress ? `${THEME.blush}20` : "transparent", transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}>
+            <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${info.saveAddress ? THEME.burgundy : THEME.border}`, background: info.saveAddress ? `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.3s", flexShrink: 0 }}>
+              {info.saveAddress && <span style={{ color: "white", fontSize: 11 }}>✓</span>}
             </div>
-            <input
-              type="checkbox"
-              checked={info.saveAddress}
-              onChange={(e) => set("saveAddress", e.target.checked)}
-              style={{ display: "none" }}
-            />
-            <span
-              style={{
-                fontFamily: "'Poppins',sans-serif",
-                fontSize: 12,
-                color: THEME.text,
-                fontWeight: 500,
-              }}
-            >
-              Save this address for future orders
-            </span>
+            <input type="checkbox" checked={info.saveAddress} onChange={(e) => set("saveAddress", e.target.checked)} style={{ display: "none" }} />
+            <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 12, color: THEME.text, fontWeight: 500 }}>Save this address for future orders</span>
           </label>
         </div>
       </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginTop: 22,
-          padding: "13px 17px",
-          background: `linear-gradient(135deg,${THEME.blush}14,${THEME.champagne}12)`,
-          borderRadius: 8,
-          border: `1px solid ${THEME.border}`,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 22, padding: "13px 17px", background: `linear-gradient(135deg,${THEME.blush}14,${THEME.champagne}12)`, borderRadius: 8, border: `1px solid ${THEME.border}` }}>
         <span style={{ fontSize: 17 }}>🔒</span>
-        <span
-          style={{
-            fontFamily: "'Poppins',sans-serif",
-            fontSize: 11,
-            color: THEME.textMuted,
-          }}
-        >
-          Your information is encrypted and secure. We never share your details.
-        </span>
+        <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted }}>Your information is encrypted and secure. We never share your details.</span>
       </div>
     </div>
   );
@@ -1243,160 +648,55 @@ function ShippingStep({
 /* ------------------------------------------------------------------ */
 /*  Step 2 – Payment                                                   */
 /* ------------------------------------------------------------------ */
-function PaymentStep({
-  info, onChange, errors, touched, onBlur, formatCardNumber, formatExpiry,
-}) {
-  const set = (field, value) =>
-    onChange((prev) => ({ ...prev, [field]: value }));
-
+function PaymentStep({ info, onChange, errors, touched, onBlur, formatCardNumber, formatExpiry }) {
+  const set = (field, value) => onChange((prev) => ({ ...prev, [field]: value }));
   const methods = [
     { id: "card", label: "Credit / Debit Card", icon: "💳", sub: "Visa · Mastercard · Rupay" },
     { id: "upi",  label: "UPI Payment",          icon: "📲", sub: "GPay · PhonePe · Paytm" },
     { id: "cod",  label: "Cash on Delivery",      icon: "💵", sub: "Pay when you receive" },
   ];
-
   return (
     <div className="step-slide">
       <SectionLabel text="Select Payment Method" />
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 26 }}>
         {methods.map((m) => (
-          <div
-            key={m.id}
-            className={`pm-card ${info.method === m.id ? "active" : ""}`}
-            onClick={() => set("method", m.id)}
-          >
-            <div
-              style={{
-                width: 42, height: 42, borderRadius: "50%",
-                background: info.method === m.id
-                  ? `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`
-                  : `${THEME.blush}30`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 19, transition: "all 0.3s", flexShrink: 0,
-              }}
-            >
-              {m.icon}
-            </div>
+          <div key={m.id} className={`pm-card ${info.method === m.id ? "active" : ""}`} onClick={() => set("method", m.id)}>
+            <div style={{ width: 42, height: 42, borderRadius: "50%", background: info.method === m.id ? `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})` : `${THEME.blush}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, transition: "all 0.3s", flexShrink: 0 }}>{m.icon}</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, fontWeight: 600, color: THEME.text }}>
-                {m.label}
-              </div>
-              <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, color: THEME.textMuted }}>
-                {m.sub}
-              </div>
+              <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, fontWeight: 600, color: THEME.text }}>{m.label}</div>
+              <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, color: THEME.textMuted }}>{m.sub}</div>
             </div>
-            <div
-              style={{
-                width: 20, height: 20, borderRadius: "50%",
-                border: `2px solid ${info.method === m.id ? THEME.burgundy : THEME.border}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.3s", flexShrink: 0,
-              }}
-            >
-              {info.method === m.id && (
-                <div
-                  style={{
-                    width: 10, height: 10, borderRadius: "50%",
-                    background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-                    animation: "fadeInScale 0.25s cubic-bezier(0.34,1.56,0.64,1)",
-                  }}
-                />
-              )}
+            <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${info.method === m.id ? THEME.burgundy : THEME.border}`, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.3s", flexShrink: 0 }}>
+              {info.method === m.id && <div style={{ width: 10, height: 10, borderRadius: "50%", background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, animation: "fadeInScale 0.25s cubic-bezier(0.34,1.56,0.64,1)" }} />}
             </div>
           </div>
         ))}
       </div>
-
       {info.method === "card" && (
-        <div
-          style={{
-            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16,
-            animation: "floatUp 0.35s cubic-bezier(0.34,1.56,0.64,1)",
-          }}
-          className="co-two-col"
-        >
-          <CoInput
-            label="Card Number" placeholder="1234 5678 9012 3456" icon="💳"
-            value={info.cardNumber}
-            onChange={(v) => set("cardNumber", formatCardNumber(v))}
-            error={errors.cardNumber} touched={touched.cardNumber}
-            onBlur={() => onBlur("cardNumber")} maxLength={19} full
-          />
-          <CoInput
-            label="Name on Card" placeholder="ARYA SHARMA"
-            value={info.cardName}
-            onChange={(v) => set("cardName", v.toUpperCase())}
-            error={errors.cardName} touched={touched.cardName}
-            onBlur={() => onBlur("cardName")} full
-          />
-          <CoInput
-            label="Expiry (MM/YY)" placeholder="MM/YY"
-            value={info.expiry}
-            onChange={(v) => set("expiry", formatExpiry(v))}
-            error={errors.expiry} touched={touched.expiry}
-            onBlur={() => onBlur("expiry")} maxLength={5}
-          />
-          <CoInput
-            label="CVV" placeholder="•••" type="password"
-            value={info.cvv}
-            onChange={(v) => set("cvv", v.replace(/\D/g, "").slice(0, 4))}
-            error={errors.cvv} touched={touched.cvv}
-            onBlur={() => onBlur("cvv")} maxLength={4}
-          />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, animation: "floatUp 0.35s cubic-bezier(0.34,1.56,0.64,1)" }} className="co-two-col">
+          <CoInput label="Card Number" placeholder="1234 5678 9012 3456" icon="💳" value={info.cardNumber} onChange={(v) => set("cardNumber", formatCardNumber(v))} error={errors.cardNumber} touched={touched.cardNumber} onBlur={() => onBlur("cardNumber")} maxLength={19} full />
+          <CoInput label="Name on Card" placeholder="ARYA SHARMA" value={info.cardName} onChange={(v) => set("cardName", v.toUpperCase())} error={errors.cardName} touched={touched.cardName} onBlur={() => onBlur("cardName")} full />
+          <CoInput label="Expiry (MM/YY)" placeholder="MM/YY" value={info.expiry} onChange={(v) => set("expiry", formatExpiry(v))} error={errors.expiry} touched={touched.expiry} onBlur={() => onBlur("expiry")} maxLength={5} />
+          <CoInput label="CVV" placeholder="•••" type="password" value={info.cvv} onChange={(v) => set("cvv", v.replace(/\D/g, "").slice(0, 4))} error={errors.cvv} touched={touched.cvv} onBlur={() => onBlur("cvv")} maxLength={4} />
         </div>
       )}
-
       {info.method === "upi" && (
         <div style={{ animation: "floatUp 0.35s cubic-bezier(0.34,1.56,0.64,1)" }}>
-          <CoInput
-            label="UPI ID" placeholder="yourname@paytm" icon="📲"
-            value={info.upiId} onChange={(v) => set("upiId", v)}
-            error={errors.upiId} touched={touched.upiId}
-            onBlur={() => onBlur("upiId")} full
-          />
+          <CoInput label="UPI ID" placeholder="yourname@paytm" icon="📲" value={info.upiId} onChange={(v) => set("upiId", v)} error={errors.upiId} touched={touched.upiId} onBlur={() => onBlur("upiId")} full />
         </div>
       )}
-
       {info.method === "cod" && (
-        <div
-          style={{
-            padding: "18px 22px",
-            background: `linear-gradient(135deg,${THEME.champagne}20,${THEME.blush}14)`,
-            borderRadius: 10,
-            border: `1.5px solid ${THEME.champagne}44`,
-            animation: "floatUp 0.35s cubic-bezier(0.34,1.56,0.64,1)",
-          }}
-        >
+        <div style={{ padding: "18px 22px", background: `linear-gradient(135deg,${THEME.champagne}20,${THEME.blush}14)`, borderRadius: 10, border: `1.5px solid ${THEME.champagne}44`, animation: "floatUp 0.35s cubic-bezier(0.34,1.56,0.64,1)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <span style={{ fontSize: 20 }}>📦</span>
-            <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, fontWeight: 600, color: THEME.text }}>
-              Cash on Delivery
-            </span>
+            <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, fontWeight: 600, color: THEME.text }}>Cash on Delivery</span>
           </div>
-          <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 12, color: THEME.textMuted, margin: 0, lineHeight: 1.65 }}>
-            Pay with cash at your door. An additional ₹49 COD handling fee applies. Please keep exact change ready.
-          </p>
+          <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 12, color: THEME.textMuted, margin: 0, lineHeight: 1.65 }}>Pay with cash at your door. An additional ₹49 COD handling fee applies. Please keep exact change ready.</p>
         </div>
       )}
-
       <div style={{ display: "flex", gap: 10, marginTop: 22, flexWrap: "wrap" }}>
         {["🔒 SSL Encrypted", "🛡️ Secure Payment", "✓ PCI Compliant"].map((b) => (
-          <span
-            key={b}
-            style={{
-              padding: "7px 13px",
-              background: `${THEME.blush}14`,
-              borderRadius: 20,
-              border: `1px solid ${THEME.border}`,
-              fontFamily: "'Poppins',sans-serif",
-              fontSize: 9,
-              color: THEME.textMuted,
-              fontWeight: 500,
-              letterSpacing: "0.3px",
-            }}
-          >
-            {b}
-          </span>
+          <span key={b} style={{ padding: "7px 13px", background: `${THEME.blush}14`, borderRadius: 20, border: `1px solid ${THEME.border}`, fontFamily: "'Poppins',sans-serif", fontSize: 9, color: THEME.textMuted, fontWeight: 500, letterSpacing: "0.3px" }}>{b}</span>
         ))}
       </div>
     </div>
@@ -1406,21 +706,12 @@ function PaymentStep({
 /* ------------------------------------------------------------------ */
 /*  Step 3 – Review                                                    */
 /* ------------------------------------------------------------------ */
-function ReviewStep({
-  items, shippingInfo, paymentInfo, subtotal, discountAmount, shipping, total, appliedCoupon,
-}) {
+function ReviewStep({ items, shippingInfo, paymentInfo, subtotal, discountAmount, shipping, total, appliedCoupon }) {
   const pmLabel = { card: "Credit / Debit Card", upi: "UPI Payment", cod: "Cash on Delivery" };
-
   return (
     <div className="step-slide">
       <SectionLabel text="Items in Your Order" />
-      <div
-        style={{
-          display: "flex", flexDirection: "column", gap: 10,
-          maxHeight: 210, overflowY: "auto", paddingRight: 6, marginBottom: 24,
-        }}
-        className="modal-scroll"
-      >
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 210, overflowY: "auto", paddingRight: 6, marginBottom: 24 }} className="modal-scroll">
         {items.map((item, i) => {
           const product = item.product || item;
           const img = getProductImage(product);
@@ -1428,143 +719,46 @@ function ReviewStep({
           const price = Number(product.price || 0);
           const qty = item.quantity || 1;
           return (
-            <div
-              key={item._id || i}
-              style={{
-                display: "flex", alignItems: "center", gap: 13,
-                padding: "11px 14px",
-                background: THEME.surface,
-                borderRadius: 8,
-                border: `1px solid ${THEME.border}`,
-                animation: `floatUp 0.35s cubic-bezier(0.34,1.56,0.64,1) ${i * 0.08}s both`,
-              }}
-            >
-              <div
-                style={{
-                  width: 48, height: 48, borderRadius: 6,
-                  overflow: "hidden", background: `${THEME.blush}20`, flexShrink: 0,
-                }}
-              >
-                {img && (
-                  <img
-                    src={img} alt={name}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={(e) => (e.target.style.display = "none")}
-                  />
-                )}
+            <div key={item._id || i} style={{ display: "flex", alignItems: "center", gap: 13, padding: "11px 14px", background: THEME.surface, borderRadius: 8, border: `1px solid ${THEME.border}`, animation: `floatUp 0.35s cubic-bezier(0.34,1.56,0.64,1) ${i * 0.08}s both` }}>
+              <div style={{ width: 48, height: 48, borderRadius: 6, overflow: "hidden", background: `${THEME.blush}20`, flexShrink: 0 }}>
+                {img && <img src={img} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => (e.target.style.display = "none")} />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontFamily: "'Cormorant Garamond',serif", fontSize: 15, color: THEME.text,
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}
-                >
-                  {name}
-                </div>
-                <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, color: THEME.textMuted }}>
-                  Qty: {qty}
-                </div>
+                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 15, color: THEME.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, color: THEME.textMuted }}>Qty: {qty}</div>
               </div>
-              <div
-                style={{
-                  fontFamily: "'Poppins',sans-serif", fontSize: 13,
-                  fontWeight: 700, color: THEME.burgundy, whiteSpace: "nowrap",
-                }}
-              >
-                ₹{(price * qty).toLocaleString("en-IN")}
-              </div>
+              <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, fontWeight: 700, color: THEME.burgundy, whiteSpace: "nowrap" }}>₹{(price * qty).toLocaleString("en-IN")}</div>
             </div>
           );
         })}
       </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 22 }}
-        className="co-two-col"
-      >
-        <div
-          style={{
-            padding: "18px 20px", background: THEME.surface,
-            borderRadius: 10, border: `1.5px solid ${THEME.border}`,
-          }}
-        >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 22 }} className="co-two-col">
+        <div style={{ padding: "18px 20px", background: THEME.surface, borderRadius: 10, border: `1.5px solid ${THEME.border}` }}>
           <SectionLabel text="Deliver To" small />
-          <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.text, fontWeight: 600, margin: "0 0 4px" }}>
-            {shippingInfo.firstName} {shippingInfo.lastName}
-          </p>
+          <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.text, fontWeight: 600, margin: "0 0 4px" }}>{shippingInfo.firstName} {shippingInfo.lastName}</p>
           <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, margin: 0, lineHeight: 1.6 }}>
-            {shippingInfo.address}
-            {shippingInfo.apartment ? `, ${shippingInfo.apartment}` : ""}
-            <br />
-            {shippingInfo.city}, {shippingInfo.state} – {shippingInfo.pincode}
-            <br />
+            {shippingInfo.address}{shippingInfo.apartment ? `, ${shippingInfo.apartment}` : ""}<br />
+            {shippingInfo.city}, {shippingInfo.state} – {shippingInfo.pincode}<br />
             📱 {shippingInfo.phone}
           </p>
         </div>
-
-        <div
-          style={{
-            padding: "18px 20px", background: THEME.surface,
-            borderRadius: 10, border: `1.5px solid ${THEME.border}`,
-          }}
-        >
+        <div style={{ padding: "18px 20px", background: THEME.surface, borderRadius: 10, border: `1.5px solid ${THEME.border}` }}>
           <SectionLabel text="Payment" small />
-          <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.text, fontWeight: 600, margin: "0 0 4px" }}>
-            {pmLabel[paymentInfo.method]}
-          </p>
-          {paymentInfo.method === "card" && (
-            <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, margin: 0 }}>
-              •••• •••• •••• {paymentInfo.cardNumber.replace(/\s/g, "").slice(-4)}
-            </p>
-          )}
-          {paymentInfo.method === "upi" && (
-            <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, margin: 0 }}>
-              {paymentInfo.upiId}
-            </p>
-          )}
+          <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.text, fontWeight: 600, margin: "0 0 4px" }}>{pmLabel[paymentInfo.method]}</p>
+          {paymentInfo.method === "card" && <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, margin: 0 }}>•••• •••• •••• {paymentInfo.cardNumber.replace(/\s/g, "").slice(-4)}</p>}
+          {paymentInfo.method === "upi" && <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, margin: 0 }}>{paymentInfo.upiId}</p>}
         </div>
       </div>
-
-      <div
-        style={{
-          padding: "22px 24px",
-          background: `linear-gradient(135deg,${THEME.blush}14,${THEME.champagne}10)`,
-          borderRadius: 10,
-          border: `1.5px solid ${THEME.border}`,
-        }}
-      >
+      <div style={{ padding: "22px 24px", background: `linear-gradient(135deg,${THEME.blush}14,${THEME.champagne}10)`, borderRadius: 10, border: `1.5px solid ${THEME.border}` }}>
         <SectionLabel text="Price Summary" small />
         <ReviewRow label="Subtotal" value={`₹${subtotal.toLocaleString("en-IN")}`} />
-        {discountAmount > 0 && (
-          <ReviewRow
-            label={`Coupon (${(appliedCoupon?.code || appliedCoupon?.offercode || "").toUpperCase()})`}
-            value={`-₹${discountAmount.toLocaleString("en-IN")}`}
-            green
-          />
-        )}
-        <ReviewRow
-          label="Shipping"
-          value={shipping === 0 ? "Free ✨" : `₹${shipping}`}
-          highlight={shipping === 0}
-        />
-        {paymentInfo.method === "cod" && (
-          <ReviewRow label="COD Fee" value="₹49 (at delivery)" muted />
-        )}
+        {discountAmount > 0 && <ReviewRow label={`Coupon (${(appliedCoupon?.code || appliedCoupon?.offercode || "").toUpperCase()})`} value={`-₹${discountAmount.toLocaleString("en-IN")}`} green />}
+        <ReviewRow label="Shipping" value={shipping === 0 ? "Free ✨" : `₹${shipping}`} highlight={shipping === 0} />
+        {paymentInfo.method === "cod" && <ReviewRow label="COD Fee" value="₹49 (at delivery)" muted />}
         <div style={{ borderTop: `1.5px solid ${THEME.border}`, margin: "12px 0 14px" }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: THEME.text }}>
-            Total Amount
-          </span>
-          <span
-            style={{
-              fontFamily: "'Cormorant Garamond',serif", fontSize: 30, fontWeight: 600,
-              background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-            }}
-          >
-            ₹{total.toLocaleString("en-IN")}
-          </span>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: THEME.text }}>Total Amount</span>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 30, fontWeight: 600, background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>₹{total.toLocaleString("en-IN")}</span>
         </div>
       </div>
     </div>
@@ -1576,176 +770,33 @@ function ReviewStep({
 /* ------------------------------------------------------------------ */
 function OrderSuccess({ orderId, onClose, navigate }) {
   const colors = [THEME.rose, THEME.burgundy, THEME.champagne, THEME.blush, THEME.gold, THEME.success];
-
   return (
     <div style={{ padding: "56px 40px", textAlign: "center", position: "relative", overflow: "hidden" }}>
       {Array.from({ length: 28 }).map((_, i) => (
-        <div
-          key={i}
-          style={{
-            position: "absolute",
-            left: `${Math.random() * 100}%`,
-            top: `${35 + Math.random() * 30}%`,
-            width: `${4 + Math.random() * 9}px`,
-            height: `${4 + Math.random() * 9}px`,
-            borderRadius: Math.random() > 0.5 ? "50%" : "2px",
-            backgroundColor: colors[Math.floor(Math.random() * colors.length)],
-            animation: `confettiFall ${1.2 + Math.random() * 1.4}s ease-out ${Math.random() * 0.8}s forwards`,
-          }}
-        />
+        <div key={i} style={{ position: "absolute", left: `${Math.random() * 100}%`, top: `${35 + Math.random() * 30}%`, width: `${4 + Math.random() * 9}px`, height: `${4 + Math.random() * 9}px`, borderRadius: Math.random() > 0.5 ? "50%" : "2px", backgroundColor: colors[Math.floor(Math.random() * colors.length)], animation: `confettiFall ${1.2 + Math.random() * 1.4}s ease-out ${Math.random() * 0.8}s forwards` }} />
       ))}
-
-      <div
-        style={{
-          width: 96, height: 96, borderRadius: "50%",
-          background: `linear-gradient(135deg,${THEME.success}22,${THEME.success}10)`,
-          border: `3px solid ${THEME.success}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          margin: "0 auto 26px",
-          animation: "fadeInScale 0.55s cubic-bezier(0.34,1.56,0.64,1)",
-        }}
-      >
+      <div style={{ width: 96, height: 96, borderRadius: "50%", background: `linear-gradient(135deg,${THEME.success}22,${THEME.success}10)`, border: `3px solid ${THEME.success}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 26px", animation: "fadeInScale 0.55s cubic-bezier(0.34,1.56,0.64,1)" }}>
         <svg width="48" height="48" viewBox="0 0 50 50">
-          <path
-            d="M13 27 L22 36 L38 16"
-            fill="none" stroke={THEME.success} strokeWidth="4"
-            strokeLinecap="round" strokeLinejoin="round"
-            style={{
-              strokeDasharray: 56,
-              animation: "checkDraw 0.55s 0.45s ease-out both",
-            }}
-          />
+          <path d="M13 27 L22 36 L38 16" fill="none" stroke={THEME.success} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 56, animation: "checkDraw 0.55s 0.45s ease-out both" }} />
         </svg>
       </div>
-
-      <h2
-        style={{
-          fontFamily: "'Cormorant Garamond',serif", fontSize: 36, fontWeight: 300,
-          margin: "0 0 8px",
-          background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`,
-          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-          animation: "floatUp 0.45s 0.35s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
-        Order Confirmed!
-      </h2>
-
-      <p
-        style={{
-          fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.textMuted,
-          margin: "0 0 28px", lineHeight: 1.7,
-          animation: "floatUp 0.45s 0.45s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
-        Thank you for your purchase. Your order has been placed
-        <br />and will be processed shortly.
-      </p>
-
-      <div
-        style={{
-          display: "inline-block",
-          padding: "18px 38px",
-          background: `linear-gradient(135deg,${THEME.blush}22,${THEME.champagne}15)`,
-          borderRadius: 12,
-          border: `1.5px solid ${THEME.rose}44`,
-          marginBottom: 30,
-          animation: "floatUp 0.45s 0.55s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
-        <div
-          style={{
-            fontFamily: "'Poppins',sans-serif", fontSize: 9,
-            letterSpacing: "2px", textTransform: "uppercase",
-            color: THEME.textMuted, marginBottom: 5, fontWeight: 600,
-          }}
-        >
-          Order ID
-        </div>
-        <div
-          style={{
-            fontFamily: "'Poppins',sans-serif", fontSize: 20,
-            fontWeight: 700, color: THEME.burgundy, letterSpacing: "2px",
-          }}
-        >
-          {orderId}
-        </div>
+      <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 36, fontWeight: 300, margin: "0 0 8px", background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", animation: "floatUp 0.45s 0.35s cubic-bezier(0.34,1.56,0.64,1) both" }}>Order Confirmed!</h2>
+      <p style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.textMuted, margin: "0 0 28px", lineHeight: 1.7, animation: "floatUp 0.45s 0.45s cubic-bezier(0.34,1.56,0.64,1) both" }}>Thank you for your purchase. Your order has been placed<br />and will be processed shortly.</p>
+      <div style={{ display: "inline-block", padding: "18px 38px", background: `linear-gradient(135deg,${THEME.blush}22,${THEME.champagne}15)`, borderRadius: 12, border: `1.5px solid ${THEME.rose}44`, marginBottom: 30, animation: "floatUp 0.45s 0.55s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+        <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 9, letterSpacing: "2px", textTransform: "uppercase", color: THEME.textMuted, marginBottom: 5, fontWeight: 600 }}>Order ID</div>
+        <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 20, fontWeight: 700, color: THEME.burgundy, letterSpacing: "2px" }}>{orderId}</div>
       </div>
-
-      <div
-        style={{
-          display: "flex", justifyContent: "center", gap: 28,
-          marginBottom: 36, flexWrap: "wrap",
-          animation: "floatUp 0.45s 0.65s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
-        {[
-          { icon: "📧", text: "Confirmation email sent" },
-          { icon: "📦", text: "Ships in 2-3 days" },
-          { icon: "🚚", text: "Live tracking available" },
-        ].map((t, i) => (
+      <div style={{ display: "flex", justifyContent: "center", gap: 28, marginBottom: 36, flexWrap: "wrap", animation: "floatUp 0.45s 0.65s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+        {[{ icon: "📧", text: "Confirmation email sent" }, { icon: "📦", text: "Ships in 2-3 days" }, { icon: "🚚", text: "Live tracking available" }].map((t, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ fontSize: 15 }}>{t.icon}</span>
-            <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, fontWeight: 500 }}>
-              {t.text}
-            </span>
+            <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, fontWeight: 500 }}>{t.text}</span>
           </div>
         ))}
       </div>
-
-      <div
-        style={{
-          display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap",
-          animation: "floatUp 0.45s 0.75s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
-        <button
-          onClick={() => { onClose(); navigate("/products"); }}
-          style={{
-            padding: "13px 34px",
-            background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-            color: "white", border: "none",
-            fontFamily: "'Poppins',sans-serif", fontSize: 11,
-            letterSpacing: "1.5px", textTransform: "uppercase",
-            cursor: "pointer", fontWeight: 700, borderRadius: 8,
-            transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-            boxShadow: `0 4px 16px ${THEME.rose}32`,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-2px)";
-            e.currentTarget.style.boxShadow = `0 8px 24px ${THEME.rose}44`;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.boxShadow = `0 4px 16px ${THEME.rose}32`;
-          }}
-        >
-          Continue Shopping
-        </button>
-        <button
-          onClick={() => { onClose(); navigate("/my-orders"); }}
-          style={{
-            padding: "13px 34px",
-            background: "transparent",
-            border: `1.5px solid ${THEME.rose}`,
-            color: THEME.burgundy,
-            fontFamily: "'Poppins',sans-serif", fontSize: 11,
-            letterSpacing: "1.5px", textTransform: "uppercase",
-            cursor: "pointer", fontWeight: 600, borderRadius: 8,
-            transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`;
-            e.currentTarget.style.color = "white";
-            e.currentTarget.style.borderColor = "transparent";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = THEME.burgundy;
-            e.currentTarget.style.borderColor = THEME.rose;
-          }}
-        >
-          View Orders
-        </button>
+      <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", animation: "floatUp 0.45s 0.75s cubic-bezier(0.34,1.56,0.64,1) both" }}>
+        <button onClick={() => { onClose(); navigate("/products"); }} style={{ padding: "13px 34px", background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, color: "white", border: "none", fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", cursor: "pointer", fontWeight: 700, borderRadius: 8, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)", boxShadow: `0 4px 16px ${THEME.rose}32` }} onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px ${THEME.rose}44`; }} onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 4px 16px ${THEME.rose}32`; }}>Continue Shopping</button>
+        <button onClick={() => { onClose(); navigate("/my-orders"); }} style={{ padding: "13px 34px", background: "transparent", border: `1.5px solid ${THEME.rose}`, color: THEME.burgundy, fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", cursor: "pointer", fontWeight: 600, borderRadius: 8, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)" }} onMouseEnter={(e) => { e.currentTarget.style.background = `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`; e.currentTarget.style.color = "white"; e.currentTarget.style.borderColor = "transparent"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = THEME.burgundy; e.currentTarget.style.borderColor = THEME.rose; }}>View Orders</button>
       </div>
     </div>
   );
@@ -1758,35 +809,11 @@ function CoInput({ label, placeholder, value, onChange, error, touched, onBlur, 
   const showErr = error && touched;
   return (
     <div style={{ gridColumn: full ? "1 / -1" : undefined }}>
-      <label
-        style={{
-          display: "block",
-          fontFamily: "'Poppins',sans-serif", fontSize: 9,
-          letterSpacing: "1px", textTransform: "uppercase",
-          color: showErr ? THEME.error : THEME.textMuted,
-          fontWeight: 700, marginBottom: 6, transition: "color 0.25s",
-        }}
-      >
-        {icon && <span style={{ marginRight: 5 }}>{icon}</span>}
-        {label}
+      <label style={{ display: "block", fontFamily: "'Poppins',sans-serif", fontSize: 9, letterSpacing: "1px", textTransform: "uppercase", color: showErr ? THEME.error : THEME.textMuted, fontWeight: 700, marginBottom: 6, transition: "color 0.25s" }}>
+        {icon && <span style={{ marginRight: 5 }}>{icon}</span>}{label}
       </label>
-      <input
-        type={type} placeholder={placeholder} value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur} maxLength={maxLength}
-        className={`co-input${showErr ? " err" : ""}`}
-      />
-      {showErr && (
-        <div
-          style={{
-            fontFamily: "'Poppins',sans-serif", fontSize: 10,
-            color: THEME.error, marginTop: 4, fontWeight: 500,
-            animation: "floatUp 0.25s cubic-bezier(0.34,1.56,0.64,1)",
-          }}
-        >
-          ✕ {error}
-        </div>
-      )}
+      <input type={type} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} maxLength={maxLength} className={`co-input${showErr ? " err" : ""}`} />
+      {showErr && <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, color: THEME.error, marginTop: 4, fontWeight: 500, animation: "floatUp 0.25s cubic-bezier(0.34,1.56,0.64,1)" }}>✕ {error}</div>}
     </div>
   );
 }
@@ -1794,22 +821,8 @@ function CoInput({ label, placeholder, value, onChange, error, touched, onBlur, 
 function SectionLabel({ text, small }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: small ? 13 : 18 }}>
-      <div
-        style={{
-          width: 15, height: 1.5,
-          background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})`,
-        }}
-      />
-      <span
-        style={{
-          fontFamily: "'Poppins',sans-serif",
-          fontSize: small ? 9 : 10,
-          letterSpacing: "1.5px", textTransform: "uppercase",
-          color: THEME.burgundy, fontWeight: 700,
-        }}
-      >
-        {text}
-      </span>
+      <div style={{ width: 15, height: 1.5, background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})` }} />
+      <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: small ? 9 : 10, letterSpacing: "1.5px", textTransform: "uppercase", color: THEME.burgundy, fontWeight: 700 }}>{text}</span>
     </div>
   );
 }
@@ -1817,18 +830,8 @@ function SectionLabel({ text, small }) {
 function ReviewRow({ label, value, green, highlight, muted }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 9, alignItems: "center" }}>
-      <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, fontWeight: 500 }}>
-        {label}
-      </span>
-      <span
-        style={{
-          fontFamily: "'Poppins',sans-serif", fontSize: 12,
-          color: green ? THEME.success : highlight ? THEME.burgundy : muted ? THEME.textMuted : THEME.text,
-          fontWeight: green ? 700 : 600,
-        }}
-      >
-        {value}
-      </span>
+      <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, fontWeight: 500 }}>{label}</span>
+      <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 12, color: green ? THEME.success : highlight ? THEME.burgundy : muted ? THEME.textMuted : THEME.text, fontWeight: green ? 700 : 600 }}>{value}</span>
     </div>
   );
 }
@@ -1838,6 +841,7 @@ function ReviewRow({ label, value, green, highlight, muted }) {
 /* ================================================================== */
 export default function Cart() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();                          // ← NEW
   const { items, loading, removeFromCart, updateQuantity, clearCart } = useCart();
   const { success, error: showError } = useToast();
 
@@ -1851,8 +855,27 @@ export default function Cart() {
 
   const notLoggedIn = useMemo(() => !localStorage.getItem("arke_token"), []);
 
-  // ✅ FIX: Added Authorization header so the protected /coupons route accepts the request.
-  // If you removed `protect` from the backend route, the header is harmless but still good practice.
+  // ── Highlight product coming from smart add to cart ──────────────
+  const highlightProductId = searchParams.get("highlight");          // ← NEW
+
+  useEffect(() => {
+    if (!highlightProductId) return;
+
+    // Wait for DOM to settle, then scroll + flash the item
+    const timer = setTimeout(() => {
+      const target = document.querySelector(
+        `[data-product-id="${highlightProductId}"]`
+      );
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("cart-item-highlight");
+        setTimeout(() => target.classList.remove("cart-item-highlight"), 2200);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [highlightProductId, items]);                                   // re-run if items load after navigate
+
   useEffect(() => {
     window.scrollTo(0, 0);
     const fetchOffers = async () => {
@@ -1866,14 +889,10 @@ export default function Cart() {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
-
         const data = await response.json();
-
         if (data?.success && Array.isArray(data.data)) {
           setOffersList(data.data);
-          console.log("✅ Coupons loaded:", data.data.length);
         } else {
-          console.warn("No coupons found");
           setOffersList([]);
         }
       } catch (err) {
@@ -1881,7 +900,6 @@ export default function Cart() {
         setOffersList([]);
       }
     };
-
     fetchOffers();
   }, []);
 
@@ -1894,16 +912,15 @@ export default function Cart() {
       showError("Failed to remove item");
       console.error(err);
     } finally {
-      setRemovingItems((prev) => {
-        const next = new Set(prev);
-        next.delete(cartItemId);
-        return next;
-      });
+      setRemovingItems((prev) => { const next = new Set(prev); next.delete(cartItemId); return next; });
     }
   };
 
   const handleUpdateQty = async (cartItemId, productId, newQty) => {
-    if (newQty < 1) return;
+    if (newQty < 1 || newQty > MAX_QUANTITY) {
+      if (newQty > MAX_QUANTITY) showError(`Maximum ${MAX_QUANTITY} of this item allowed`);
+      return;
+    }
     setUpdatingQty((prev) => new Set([...prev, cartItemId]));
     try {
       await updateQuantity(productId, newQty);
@@ -1912,11 +929,7 @@ export default function Cart() {
       showError("Failed to update quantity");
       console.error(err);
     } finally {
-      setUpdatingQty((prev) => {
-        const next = new Set(prev);
-        next.delete(cartItemId);
-        return next;
-      });
+      setUpdatingQty((prev) => { const next = new Set(prev); next.delete(cartItemId); return next; });
     }
   };
 
@@ -1940,25 +953,11 @@ export default function Cart() {
   const handleApplyCoupon = () => {
     const code = couponInput.trim().toUpperCase();
     if (!code) { setCouponError("Please enter a coupon code"); return; }
-    const found = offersList.find(
-      (o) => (o.code || o.offercode || "").toUpperCase() === code
-    );
-    if (!found) {
-      setCouponError("Invalid or expired coupon code");
-      setAppliedCoupon(null);
-      return;
-    }
-    if (found.expiryDate && new Date(found.expiryDate) < new Date()) {
-      setCouponError("This coupon has expired");
-      setAppliedCoupon(null);
-      return;
-    }
+    const found = offersList.find((o) => (o.code || o.offercode || "").toUpperCase() === code);
+    if (!found) { setCouponError("Invalid or expired coupon code"); setAppliedCoupon(null); return; }
+    if (found.expiryDate && new Date(found.expiryDate) < new Date()) { setCouponError("This coupon has expired"); setAppliedCoupon(null); return; }
     const minOrder = Number(found.minOrderAmount || found.minOrder || 0);
-    if (subtotal < minOrder) {
-      setCouponError(`Minimum order ₹${minOrder.toLocaleString("en-IN")} required`);
-      setAppliedCoupon(null);
-      return;
-    }
+    if (subtotal < minOrder) { setCouponError(`Minimum order ₹${minOrder.toLocaleString("en-IN")} required`); setAppliedCoupon(null); return; }
     setAppliedCoupon(found);
     setCouponError("");
     success("Coupon applied successfully!");
@@ -1979,6 +978,17 @@ export default function Cart() {
           to   { opacity:1; transform:translateY(0); }
         }
         @keyframes spin { to { transform:rotate(360deg); } }
+
+        /* ── Highlight animation for smart-add-to-cart ── */
+        @keyframes cartHighlight {
+          0%   { background-color: rgba(232, 180, 196, 0.45); box-shadow: 0 0 0 3px rgba(232,180,196,0.6); border-radius: 8px; }
+          60%  { background-color: rgba(232, 180, 196, 0.2);  box-shadow: 0 0 0 2px rgba(232,180,196,0.3); }
+          100% { background-color: transparent; box-shadow: none; }
+        }
+        .cart-item-highlight {
+          animation: cartHighlight 2.2s ease-out forwards;
+        }
+
         .cart-header  { animation:fadeInUp 0.8s cubic-bezier(0.34,1.56,0.64,1); }
         .cart-items   { animation:fadeInUp 0.6s cubic-bezier(0.34,1.56,0.64,1); }
         .cart-sidebar { animation:fadeInUp 0.7s cubic-bezier(0.34,1.56,0.64,1); }
@@ -1994,31 +1004,13 @@ export default function Cart() {
       {loading ? (
         <LoadingState />
       ) : notLoggedIn ? (
-        <EmptyState
-          icon="◇"
-          title="Sign in to view your cart"
-          sub="Your saved items will appear here"
-          btn="Sign In"
-          onClick={() => navigate("/")}
-        />
+        <EmptyState icon="◇" title="Sign in to view your cart" sub="Your saved items will appear here" btn="Sign In" onClick={() => navigate("/")} />
       ) : items.length === 0 ? (
-        <EmptyState
-          icon="◈"
-          title="Your cart is empty"
-          sub="Discover pieces crafted just for you"
-          btn="Shop Now"
-          onClick={() => navigate("/products")}
-        />
+        <EmptyState icon="◈" title="Your cart is empty" sub="Discover pieces crafted just for you" btn="Shop Now" onClick={() => navigate("/products")} />
       ) : (
         <div
           className="cart-main"
-          style={{
-            padding: "48px 80px",
-            display: "grid",
-            gridTemplateColumns: "1fr 420px",
-            gap: 48,
-            alignItems: "start",
-          }}
+          style={{ padding: "48px 80px", display: "grid", gridTemplateColumns: "1fr 420px", gap: 48, alignItems: "start" }}
         >
           <CartItemsColumn
             items={items}
@@ -2029,32 +1021,19 @@ export default function Cart() {
             navigate={navigate}
           />
           <CartSidebar
-            subtotal={subtotal}
-            discountAmount={discountAmount}
-            shipping={shipping}
-            total={total}
-            appliedCoupon={appliedCoupon}
-            couponInput={couponInput}
-            couponError={couponError}
-            onCouponChange={setCouponInput}
-            onApplyCoupon={handleApplyCoupon}
-            onRemoveCoupon={handleRemoveCoupon}
-            onCouponErrorClear={() => setCouponError("")}
+            subtotal={subtotal} discountAmount={discountAmount} shipping={shipping} total={total}
+            appliedCoupon={appliedCoupon} couponInput={couponInput} couponError={couponError}
+            onCouponChange={setCouponInput} onApplyCoupon={handleApplyCoupon}
+            onRemoveCoupon={handleRemoveCoupon} onCouponErrorClear={() => setCouponError("")}
             onCheckout={() => setShowCheckout(true)}
           />
         </div>
       )}
 
       <CheckoutModal
-        isOpen={showCheckout}
-        onClose={() => setShowCheckout(false)}
-        items={items}
-        subtotal={subtotal}
-        discountAmount={discountAmount}
-        shipping={shipping}
-        total={total}
-        appliedCoupon={appliedCoupon}
-        clearCart={clearCart}
+        isOpen={showCheckout} onClose={() => setShowCheckout(false)}
+        items={items} subtotal={subtotal} discountAmount={discountAmount}
+        shipping={shipping} total={total} appliedCoupon={appliedCoupon} clearCart={clearCart}
       />
     </div>
   );
@@ -2065,54 +1044,14 @@ export default function Cart() {
 /* ================================================================== */
 function CartHeader({ itemCount }) {
   return (
-    <div
-      className="cart-header"
-      style={{ padding: "60px 80px 40px", borderBottom: `1.5px solid ${THEME.border}` }}
-    >
+    <div className="cart-header" style={{ padding: "60px 80px 40px", borderBottom: `1.5px solid ${THEME.border}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-        <div
-          style={{
-            width: 28, height: 1.5,
-            background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})`,
-          }}
-        />
-        <span
-          style={{
-            fontFamily: "'Poppins',sans-serif", fontSize: 11,
-            letterSpacing: "2px", textTransform: "uppercase",
-            color: THEME.burgundy, fontWeight: 600,
-          }}
-        >
-          Your Selection
-        </span>
+        <div style={{ width: 28, height: 1.5, background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})` }} />
+        <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "2px", textTransform: "uppercase", color: THEME.burgundy, fontWeight: 600 }}>Your Selection</span>
       </div>
-      <div
-        style={{
-          display: "flex", alignItems: "flex-end",
-          justifyContent: "space-between", gap: 20, flexWrap: "wrap",
-        }}
-      >
-        <h1
-          style={{
-            fontFamily: "'Cormorant Garamond',serif",
-            fontSize: "clamp(36px,4vw,56px)", fontWeight: 300,
-            color: THEME.text, margin: 0,
-            background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`,
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-          }}
-        >
-          Shopping Cart
-        </h1>
-        {itemCount > 0 && (
-          <span
-            style={{
-              fontFamily: "'Poppins',sans-serif", fontSize: 12,
-              color: THEME.textMuted, letterSpacing: 1, fontWeight: 500,
-            }}
-          >
-            {itemCount} {itemCount === 1 ? "item" : "items"}
-          </span>
-        )}
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+        <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: "clamp(36px,4vw,56px)", fontWeight: 300, color: THEME.text, margin: 0, background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Shopping Cart</h1>
+        {itemCount > 0 && <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 12, color: THEME.textMuted, letterSpacing: 1, fontWeight: 500 }}>{itemCount} {itemCount === 1 ? "item" : "items"}</span>}
       </div>
     </div>
   );
@@ -2121,24 +1060,9 @@ function CartHeader({ itemCount }) {
 function CartItemsColumn({ items, removingItems, updatingQty, onRemove, onUpdateQty, navigate }) {
   return (
     <div className="cart-items">
-      <div
-        style={{
-          display: "grid", gridTemplateColumns: "120px 1fr auto auto",
-          gap: 24, paddingBottom: 16,
-          borderBottom: `1.5px solid ${THEME.border}`, marginBottom: 8,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "120px 1fr auto auto", gap: 24, paddingBottom: 16, borderBottom: `1.5px solid ${THEME.border}`, marginBottom: 8 }}>
         {["Product", "", "Qty", "Price"].map((h) => (
-          <span
-            key={h || "details"}
-            style={{
-              fontFamily: "'Poppins',sans-serif", fontSize: 9,
-              letterSpacing: "1.5px", textTransform: "uppercase",
-              color: THEME.textMuted, fontWeight: 600,
-            }}
-          >
-            {h}
-          </span>
+          <span key={h || "details"} style={{ fontFamily: "'Poppins',sans-serif", fontSize: 9, letterSpacing: "1.5px", textTransform: "uppercase", color: THEME.textMuted, fontWeight: 600 }}>{h}</span>
         ))}
       </div>
       <div style={{ display: "flex", flexDirection: "column" }}>
@@ -2173,6 +1097,7 @@ function CartItem({ item, isRemoving, isUpdatingQty, onRemove, onUpdateQty, navi
 
   return (
     <div
+      data-product-id={pid}   // ← used by highlight scroll
       style={{
         display: "grid", gridTemplateColumns: "120px 1fr auto auto",
         gap: 24, padding: "24px 0",
@@ -2183,366 +1108,90 @@ function CartItem({ item, isRemoving, isUpdatingQty, onRemove, onUpdateQty, navi
       }}
     >
       <div
-        style={{
-          width: 120, height: 140, flexShrink: 0,
-          overflow: "hidden", cursor: "pointer", borderRadius: 6,
-          backgroundColor: `${THEME.blush}20`,
-          transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-        }}
+        style={{ width: 120, height: 140, flexShrink: 0, overflow: "hidden", cursor: "pointer", borderRadius: 6, backgroundColor: `${THEME.blush}20`, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}
         onClick={() => navigate(`/products/${pid}`)}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.rose}25`;
-          e.currentTarget.style.transform = "scale(1.02)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = "none";
-          e.currentTarget.style.transform = "scale(1)";
-        }}
+        onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.rose}25`; e.currentTarget.style.transform = "scale(1.02)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "scale(1)"; }}
       >
         {img ? (
-          <img
-            src={img} alt={name}
-            style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}
-            onError={(e) => (e.target.style.display = "none")}
-            onMouseEnter={(e) => (e.target.style.transform = "scale(1.08)")}
-            onMouseLeave={(e) => (e.target.style.transform = "scale(1)")}
-          />
+          <img src={img} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.3s cubic-bezier(0.34,1.56,0.64,1)" }} onError={(e) => (e.target.style.display = "none")} onMouseEnter={(e) => (e.target.style.transform = "scale(1.08)")} onMouseLeave={(e) => (e.target.style.transform = "scale(1)")} />
         ) : (
           <ProductPlaceholder product={product} small />
         )}
       </div>
 
       <div>
-        <div
-          style={{
-            fontFamily: "'Cormorant Garamond',serif", fontSize: 18,
-            fontWeight: 400, color: THEME.text, marginBottom: 8,
-            cursor: "pointer", lineHeight: 1.3,
-            transition: "color 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-          }}
-          onClick={() => navigate(`/product/${pid}`)}
-          onMouseEnter={(e) => (e.currentTarget.style.color = THEME.burgundy)}
-          onMouseLeave={(e) => (e.currentTarget.style.color = THEME.text)}
-        >
+        <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontWeight: 400, color: THEME.text, marginBottom: 8, cursor: "pointer", lineHeight: 1.3, transition: "color 0.3s cubic-bezier(0.34,1.56,0.64,1)" }} onClick={() => navigate(`/product/${pid}`)} onMouseEnter={(e) => (e.currentTarget.style.color = THEME.burgundy)} onMouseLeave={(e) => (e.currentTarget.style.color = THEME.text)}>
           {name}
         </div>
-        {product.metal_type && (
-          <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, letterSpacing: 0.5, marginBottom: 4 }}>
-            Metal: {product.metal_type}
-          </div>
-        )}
-        {product.type && (
-          <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, letterSpacing: 0.5, marginBottom: 12 }}>
-            {product.type}
-          </div>
-        )}
-        <button
-          onClick={onRemove}
-          disabled={isRemoving}
-          style={{
-            background: "none", border: "none", color: THEME.rose,
-            cursor: isRemoving ? "not-allowed" : "pointer",
-            fontFamily: "'Poppins',sans-serif", fontSize: 10,
-            letterSpacing: "1px", textTransform: "uppercase",
-            padding: 0, transition: "color 0.2s", fontWeight: 600,
-          }}
-          onMouseEnter={(e) => !isRemoving && (e.target.style.color = THEME.error)}
-          onMouseLeave={(e) => !isRemoving && (e.target.style.color = THEME.rose)}
-        >
+        {product.metal_type && <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, letterSpacing: 0.5, marginBottom: 4 }}>Metal: {product.metal_type}</div>}
+        {product.type && <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, color: THEME.textMuted, letterSpacing: 0.5, marginBottom: 12 }}>{product.type}</div>}
+        <button onClick={onRemove} disabled={isRemoving} style={{ background: "none", border: "none", color: THEME.rose, cursor: isRemoving ? "not-allowed" : "pointer", fontFamily: "'Poppins',sans-serif", fontSize: 10, letterSpacing: "1px", textTransform: "uppercase", padding: 0, transition: "color 0.2s", fontWeight: 600 }} onMouseEnter={(e) => !isRemoving && (e.target.style.color = THEME.error)} onMouseLeave={(e) => !isRemoving && (e.target.style.color = THEME.rose)}>
           {isRemoving ? "Removing…" : "× Remove"}
         </button>
       </div>
 
-      <QuantitySelector qty={qty} isUpdating={isUpdatingQty} onUpdateQty={onUpdateQty} />
+      <QuantitySelector qty={qty} isUpdating={isUpdatingQty} onUpdateQty={onUpdateQty} maxQty={MAX_QUANTITY} />
 
-      <div
-        style={{
-          fontFamily: "'Cormorant Garamond',serif", fontSize: 18,
-          background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-          textAlign: "right", whiteSpace: "nowrap", fontWeight: 400,
-        }}
-      >
+      <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", textAlign: "right", whiteSpace: "nowrap", fontWeight: 400 }}>
         ₹{(price * qty).toLocaleString("en-IN")}
       </div>
     </div>
   );
 }
 
-function QuantitySelector({ qty, isUpdating, onUpdateQty }) {
+function QuantitySelector({ qty, isUpdating, onUpdateQty, maxQty }) {
   return (
-    <div
-      style={{
-        display: "flex", alignItems: "center", gap: 8,
-        background: `${THEME.blush}20`,
-        border: `1.5px solid ${THEME.border}`,
-        borderRadius: 6, padding: "4px 8px",
-        opacity: isUpdating ? 0.6 : 1,
-        pointerEvents: isUpdating ? "none" : "auto",
-        transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-      }}
-    >
-      <button
-        onClick={() => onUpdateQty(Math.max(1, qty - 1))}
-        disabled={isUpdating || qty <= 1}
-        style={{
-          background: "none", border: "none", color: THEME.rose,
-          cursor: isUpdating || qty <= 1 ? "not-allowed" : "pointer",
-          fontSize: 16, padding: "2px 6px", transition: "color 0.2s", fontWeight: 600,
-        }}
-        onMouseEnter={(e) => !isUpdating && qty > 1 && (e.target.style.color = THEME.burgundy)}
-        onMouseLeave={(e) => (e.target.style.color = THEME.rose)}
-      >
-        −
-      </button>
-      <span
-        style={{
-          fontFamily: "'Poppins',sans-serif", fontSize: 13,
-          color: THEME.text, minWidth: 24, textAlign: "center", fontWeight: 700,
-        }}
-      >
-        {qty}
-      </span>
-      <button
-        onClick={() => onUpdateQty(qty + 1)}
-        disabled={isUpdating}
-        style={{
-          background: "none", border: "none", color: THEME.rose,
-          cursor: isUpdating ? "not-allowed" : "pointer",
-          fontSize: 16, padding: "2px 6px", transition: "color 0.2s", fontWeight: 600,
-        }}
-        onMouseEnter={(e) => !isUpdating && (e.target.style.color = THEME.burgundy)}
-        onMouseLeave={(e) => (e.target.style.color = THEME.rose)}
-      >
-        +
-      </button>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, background: `${THEME.blush}20`, border: `1.5px solid ${THEME.border}`, borderRadius: 6, padding: "4px 8px", opacity: isUpdating ? 0.6 : 1, pointerEvents: isUpdating ? "none" : "auto", transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}>
+      <button onClick={() => onUpdateQty(Math.max(1, qty - 1))} disabled={isUpdating || qty <= 1} style={{ background: "none", border: "none", color: THEME.rose, cursor: isUpdating || qty <= 1 ? "not-allowed" : "pointer", fontSize: 16, padding: "2px 6px", transition: "color 0.2s", fontWeight: 600 }} onMouseEnter={(e) => !isUpdating && qty > 1 && (e.target.style.color = THEME.burgundy)} onMouseLeave={(e) => (e.target.style.color = THEME.rose)} title="Decrease quantity">−</button>
+      <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.text, minWidth: 24, textAlign: "center", fontWeight: 700 }}>{qty}</span>
+      <button onClick={() => { if (qty < maxQty) onUpdateQty(qty + 1); }} disabled={isUpdating || qty >= maxQty} style={{ background: "none", border: "none", color: THEME.rose, cursor: isUpdating || qty >= maxQty ? "not-allowed" : "pointer", fontSize: 16, padding: "2px 6px", transition: "color 0.2s", fontWeight: 600, opacity: qty >= maxQty ? 0.4 : 1 }} onMouseEnter={(e) => !isUpdating && qty < maxQty && (e.target.style.color = THEME.burgundy)} onMouseLeave={(e) => (e.target.style.color = THEME.rose)} title={qty >= maxQty ? `Maximum ${maxQty} allowed` : "Increase quantity"}>+</button>
     </div>
   );
 }
 
-function CartSidebar({
-  subtotal, discountAmount, shipping, total,
-  appliedCoupon, couponInput, couponError,
-  onCouponChange, onApplyCoupon, onRemoveCoupon, onCouponErrorClear, onCheckout,
-}) {
+function CartSidebar({ subtotal, discountAmount, shipping, total, appliedCoupon, couponInput, couponError, onCouponChange, onApplyCoupon, onRemoveCoupon, onCouponErrorClear, onCheckout }) {
   return (
-    <div
-      className="cart-sidebar"
-      style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 140 }}
-    >
-      <div
-        style={{
-          background: THEME.surface,
-          border: `1.5px solid ${THEME.border}`,
-          padding: 40, borderRadius: 8,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.04)",
-        }}
-      >
+    <div className="cart-sidebar" style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 140 }}>
+      <div style={{ background: THEME.surface, border: `1.5px solid ${THEME.border}`, padding: 40, borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
-          <div
-            style={{
-              width: 20, height: 1.5,
-              background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})`,
-            }}
-          />
-          <span
-            style={{
-              fontFamily: "'Poppins',sans-serif", fontSize: 10,
-              letterSpacing: "1.5px", textTransform: "uppercase",
-              color: THEME.burgundy, fontWeight: 700,
-            }}
-          >
-            Order Summary
-          </span>
+          <div style={{ width: 20, height: 1.5, background: `linear-gradient(90deg,${THEME.rose},${THEME.burgundy})` }} />
+          <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: THEME.burgundy, fontWeight: 700 }}>Order Summary</span>
         </div>
-
         <SummaryRow label="Subtotal" value={`₹${subtotal.toLocaleString("en-IN")}`} />
-        {discountAmount > 0 && (
-          <SummaryRow
-            label={`Discount (${(appliedCoupon?.code || appliedCoupon?.offercode || "").toUpperCase()})`}
-            value={`-₹${discountAmount.toLocaleString("en-IN")}`}
-            highlight green
-          />
-        )}
-        <SummaryRow
-          label="Shipping"
-          value={shipping === 0 ? "Free" : `₹${shipping}`}
-          highlight={shipping === 0}
-        />
+        {discountAmount > 0 && <SummaryRow label={`Discount (${(appliedCoupon?.code || appliedCoupon?.offercode || "").toUpperCase()})`} value={`-₹${discountAmount.toLocaleString("en-IN")}`} highlight green />}
+        <SummaryRow label="Shipping" value={shipping === 0 ? "Free" : `₹${shipping}`} highlight={shipping === 0} />
         {shipping > 0 && (
-          <div
-            style={{
-              background: `${THEME.blush}20`,
-              border: `1px solid ${THEME.rose}40`,
-              padding: "10px 14px", marginBottom: 20, borderRadius: 6,
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "'Poppins',sans-serif", fontSize: 10,
-                color: THEME.rose, letterSpacing: 0.5, fontWeight: 500,
-              }}
-            >
-              Add ₹{Math.max(0, 999 - subtotal).toLocaleString("en-IN")} for free shipping
-            </span>
+          <div style={{ background: `${THEME.blush}20`, border: `1px solid ${THEME.rose}40`, padding: "10px 14px", marginBottom: 20, borderRadius: 6 }}>
+            <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, color: THEME.rose, letterSpacing: 0.5, fontWeight: 500 }}>Add ₹{Math.max(0, 999 - subtotal).toLocaleString("en-IN")} for free shipping</span>
           </div>
         )}
-
         <div style={{ borderTop: `1px solid ${THEME.border}`, margin: "20px 0 24px" }} />
-
-        <div
-          style={{
-            display: "flex", justifyContent: "space-between",
-            alignItems: "baseline", marginBottom: 28,
-          }}
-        >
-          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: THEME.text }}>
-            Total
-          </span>
-          <span
-            style={{
-              fontFamily: "'Cormorant Garamond',serif", fontSize: 28,
-              background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-              fontWeight: 400,
-            }}
-          >
-            ₹{total.toLocaleString("en-IN")}
-          </span>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 28 }}>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: THEME.text }}>Total</span>
+          <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 28, background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", fontWeight: 400 }}>₹{total.toLocaleString("en-IN")}</span>
         </div>
-
         <div style={{ borderTop: `1px solid ${THEME.border}`, paddingTop: 24, marginBottom: 24 }}>
-          <div
-            style={{
-              fontFamily: "'Poppins',sans-serif", fontSize: 10,
-              letterSpacing: "1px", textTransform: "uppercase",
-              color: THEME.textMuted, marginBottom: 12, fontWeight: 600,
-            }}
-          >
-            Apply Coupon
-          </div>
+          <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, letterSpacing: "1px", textTransform: "uppercase", color: THEME.textMuted, marginBottom: 12, fontWeight: 600 }}>Apply Coupon</div>
           {!appliedCoupon ? (
             <>
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <input
-                  type="text"
-                  value={couponInput}
-                  onChange={(e) => { onCouponChange(e.target.value.toUpperCase()); onCouponErrorClear(); }}
-                  onKeyDown={(e) => e.key === "Enter" && onApplyCoupon()}
-                  placeholder="ENTER CODE"
-                  style={{
-                    flex: 1, background: `${THEME.blush}20`,
-                    border: `1.5px solid ${THEME.border}`, color: THEME.text,
-                    padding: "10px 14px",
-                    fontFamily: "'Poppins',sans-serif", fontSize: 11,
-                    letterSpacing: "1px", outline: "none", borderRadius: 6,
-                    transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-                  }}
-                  onFocus={(e) => { e.target.style.borderColor = THEME.rose; e.target.style.background = `${THEME.blush}30`; }}
-                  onBlur={(e) => { e.target.style.borderColor = THEME.border; e.target.style.background = `${THEME.blush}20`; }}
-                />
-                <button
-                  onClick={onApplyCoupon}
-                  style={{
-                    padding: "10px 18px", background: "transparent",
-                    border: `1.5px solid ${THEME.rose}`, color: THEME.burgundy,
-                    fontFamily: "'Poppins',sans-serif", fontSize: 10,
-                    letterSpacing: "1px", textTransform: "uppercase",
-                    cursor: "pointer", transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-                    whiteSpace: "nowrap", borderRadius: 6, fontWeight: 600,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`;
-                    e.currentTarget.style.color = "white";
-                    e.currentTarget.style.borderColor = "transparent";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.color = THEME.burgundy;
-                    e.currentTarget.style.borderColor = THEME.rose;
-                  }}
-                >
-                  Apply
-                </button>
+                <input type="text" value={couponInput} onChange={(e) => { onCouponChange(e.target.value.toUpperCase()); onCouponErrorClear(); }} onKeyDown={(e) => e.key === "Enter" && onApplyCoupon()} placeholder="ENTER CODE" style={{ flex: 1, background: `${THEME.blush}20`, border: `1.5px solid ${THEME.border}`, color: THEME.text, padding: "10px 14px", fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1px", outline: "none", borderRadius: 6, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)" }} onFocus={(e) => { e.target.style.borderColor = THEME.rose; e.target.style.background = `${THEME.blush}30`; }} onBlur={(e) => { e.target.style.borderColor = THEME.border; e.target.style.background = `${THEME.blush}20`; }} />
+                <button onClick={onApplyCoupon} style={{ padding: "10px 18px", background: "transparent", border: `1.5px solid ${THEME.rose}`, color: THEME.burgundy, fontFamily: "'Poppins',sans-serif", fontSize: 10, letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer", transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)", whiteSpace: "nowrap", borderRadius: 6, fontWeight: 600 }} onMouseEnter={(e) => { e.currentTarget.style.background = `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`; e.currentTarget.style.color = "white"; e.currentTarget.style.borderColor = "transparent"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = THEME.burgundy; e.currentTarget.style.borderColor = THEME.rose; }}>Apply</button>
               </div>
-              {couponError && (
-                <div
-                  style={{
-                    fontFamily: "'Poppins',sans-serif", fontSize: 10,
-                    color: THEME.error, letterSpacing: "0.3px", fontWeight: 500,
-                  }}
-                >
-                  ✕ {couponError}
-                </div>
-              )}
+              {couponError && <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 10, color: THEME.error, letterSpacing: "0.3px", fontWeight: 500 }}>✕ {couponError}</div>}
             </>
           ) : (
-            <div
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                background: `${THEME.blush}20`,
-                border: `1.5px solid ${THEME.rose}`,
-                padding: "12px 14px", borderRadius: 6,
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: `${THEME.blush}20`, border: `1.5px solid ${THEME.rose}`, padding: "12px 14px", borderRadius: 6 }}>
               <div>
-                <div
-                  style={{
-                    fontFamily: "'Poppins',sans-serif", fontSize: 9,
-                    letterSpacing: "1px", textTransform: "uppercase",
-                    color: THEME.rose, marginBottom: 2, fontWeight: 700,
-                  }}
-                >
-                  ✓ Coupon Applied
-                </div>
-                <div
-                  style={{
-                    fontFamily: "'Poppins',sans-serif", fontSize: 12,
-                    fontWeight: 700, color: THEME.text, letterSpacing: "0.5px",
-                  }}
-                >
-                  {(appliedCoupon.code || appliedCoupon.offercode || "").toUpperCase()}
-                </div>
+                <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 9, letterSpacing: "1px", textTransform: "uppercase", color: THEME.rose, marginBottom: 2, fontWeight: 700 }}>✓ Coupon Applied</div>
+                <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 12, fontWeight: 700, color: THEME.text, letterSpacing: "0.5px" }}>{(appliedCoupon.code || appliedCoupon.offercode || "").toUpperCase()}</div>
               </div>
-              <button
-                onClick={onRemoveCoupon}
-                style={{
-                  background: "none", border: "none", color: THEME.rose,
-                  cursor: "pointer",
-                  fontFamily: "'Poppins',sans-serif", fontSize: 10,
-                  letterSpacing: "0.5px", textTransform: "uppercase",
-                  transition: "color 0.2s", fontWeight: 600,
-                }}
-                onMouseEnter={(e) => (e.target.style.color = THEME.error)}
-                onMouseLeave={(e) => (e.target.style.color = THEME.rose)}
-              >
-                Remove
-              </button>
+              <button onClick={onRemoveCoupon} style={{ background: "none", border: "none", color: THEME.rose, cursor: "pointer", fontFamily: "'Poppins',sans-serif", fontSize: 10, letterSpacing: "0.5px", textTransform: "uppercase", transition: "color 0.2s", fontWeight: 600 }} onMouseEnter={(e) => (e.target.style.color = THEME.error)} onMouseLeave={(e) => (e.target.style.color = THEME.rose)}>Remove</button>
             </div>
           )}
         </div>
-
-        <button
-          onClick={onCheckout}
-          style={{
-            width: "100%", padding: 16,
-            background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-            color: "white", border: "none",
-            fontFamily: "'Poppins',sans-serif", fontSize: 11,
-            letterSpacing: "1.5px", textTransform: "uppercase",
-            cursor: "pointer", fontWeight: 700,
-            transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-            borderRadius: 6, boxShadow: `0 4px 16px ${THEME.rose}30`,
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.transform = "translateY(-2px)";
-            e.target.style.boxShadow = `0 8px 24px ${THEME.rose}40`;
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.transform = "translateY(0)";
-            e.target.style.boxShadow = `0 4px 16px ${THEME.rose}30`;
-          }}
-        >
+        <button onClick={onCheckout} style={{ width: "100%", padding: 16, background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, color: "white", border: "none", fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", cursor: "pointer", fontWeight: 700, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)", borderRadius: 6, boxShadow: `0 4px 16px ${THEME.rose}30` }} onMouseEnter={(e) => { e.target.style.transform = "translateY(-2px)"; e.target.style.boxShadow = `0 8px 24px ${THEME.rose}40`; }} onMouseLeave={(e) => { e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = `0 4px 16px ${THEME.rose}30`; }}>
           Proceed to Checkout →
         </button>
       </div>
@@ -2553,54 +1202,17 @@ function CartSidebar({
 function SummaryRow({ label, value, highlight, green }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, alignItems: "center" }}>
-      <span
-        style={{
-          fontFamily: "'Poppins',sans-serif", fontSize: 11,
-          letterSpacing: "0.5px", textTransform: "uppercase",
-          color: THEME.textMuted, fontWeight: 500,
-        }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          fontFamily: "'Poppins',sans-serif", fontSize: 13,
-          color: green ? THEME.success : highlight ? THEME.burgundy : THEME.text,
-          fontWeight: green ? 700 : 600,
-        }}
-      >
-        {value}
-      </span>
+      <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "0.5px", textTransform: "uppercase", color: THEME.textMuted, fontWeight: 500 }}>{label}</span>
+      <span style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: green ? THEME.success : highlight ? THEME.burgundy : THEME.text, fontWeight: green ? 700 : 600 }}>{value}</span>
     </div>
   );
 }
 
 function LoadingState() {
   return (
-    <div
-      style={{
-        display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center",
-        padding: 120, gap: 20,
-      }}
-    >
-      <div
-        style={{
-          width: 48, height: 48,
-          border: `3px solid ${THEME.border}`,
-          borderTopColor: THEME.rose,
-          borderRadius: "50%",
-          animation: "spin 1s linear infinite",
-        }}
-      />
-      <span
-        style={{
-          fontFamily: "'Cormorant Garamond',serif", fontSize: 18,
-          color: THEME.textMuted, fontStyle: "italic", fontWeight: 300,
-        }}
-      >
-        Loading your cart…
-      </span>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 120, gap: 20 }}>
+      <div style={{ width: 48, height: 48, border: `3px solid ${THEME.border}`, borderTopColor: THEME.rose, borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+      <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: THEME.textMuted, fontStyle: "italic", fontWeight: 300 }}>Loading your cart…</span>
     </div>
   );
 }
@@ -2609,47 +1221,9 @@ function EmptyState({ icon, title, sub, btn, onClick }) {
   return (
     <div style={{ textAlign: "center", padding: "120px 80px" }}>
       <div style={{ fontSize: 56, color: `${THEME.rose}40`, marginBottom: 24 }}>{icon}</div>
-      <div
-        style={{
-          fontFamily: "'Cormorant Garamond',serif", fontSize: 32, fontWeight: 300,
-          color: THEME.text, marginBottom: 12,
-          background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`,
-          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-        }}
-      >
-        {title}
-      </div>
-      <div
-        style={{
-          fontFamily: "'Poppins',sans-serif", fontSize: 13,
-          color: THEME.textMuted, letterSpacing: 0.5, marginBottom: 40,
-        }}
-      >
-        {sub}
-      </div>
-      <button
-        onClick={onClick}
-        style={{
-          padding: "14px 48px",
-          background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`,
-          color: "white", border: "none",
-          fontFamily: "'Poppins',sans-serif", fontSize: 11,
-          letterSpacing: "1.5px", textTransform: "uppercase",
-          cursor: "pointer", fontWeight: 700, borderRadius: 6,
-          transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-          boxShadow: `0 4px 16px ${THEME.rose}30`,
-        }}
-        onMouseEnter={(e) => {
-          e.target.style.transform = "translateY(-2px)";
-          e.target.style.boxShadow = `0 8px 24px ${THEME.rose}40`;
-        }}
-        onMouseLeave={(e) => {
-          e.target.style.transform = "translateY(0)";
-          e.target.style.boxShadow = `0 4px 16px ${THEME.rose}30`;
-        }}
-      >
-        {btn}
-      </button>
+      <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 32, fontWeight: 300, color: THEME.text, marginBottom: 12, background: `linear-gradient(135deg,${THEME.text},${THEME.burgundy})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{title}</div>
+      <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 13, color: THEME.textMuted, letterSpacing: 0.5, marginBottom: 40 }}>{sub}</div>
+      <button onClick={onClick} style={{ padding: "14px 48px", background: `linear-gradient(135deg,${THEME.rose},${THEME.burgundy})`, color: "white", border: "none", fontFamily: "'Poppins',sans-serif", fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", cursor: "pointer", fontWeight: 700, borderRadius: 6, transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)", boxShadow: `0 4px 16px ${THEME.rose}30` }} onMouseEnter={(e) => { e.target.style.transform = "translateY(-2px)"; e.target.style.boxShadow = `0 8px 24px ${THEME.rose}40`; }} onMouseLeave={(e) => { e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = `0 4px 16px ${THEME.rose}30`; }}>{btn}</button>
     </div>
   );
 }

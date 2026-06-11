@@ -138,15 +138,16 @@ export const api = {
   register: (data)            => post("/api/add-user", data),
 
   // ── Coupons ────────────────────────────────────────────────────
-  // ✅ FIX: changed from post() to get() to match backend GET /api/coupons
   getCoupons: () => get("/api/coupons"),
 
   // ── Orders ─────────────────────────────────────────────────────
-  placeOrder: (data) => post("/api/place-order", data),  getMyOrders: () => get("/api/orders"),
+  placeOrder: (data) => post("/api/place-order", data),
+  getMyOrders: () => get("/api/orders"),
   getOrderDetail: (orderId) => get(`/api/orders/${orderId}`),
   trackOrder: (orderId, email) => 
     get(`/api/orders/track/${orderId}${email ? `?email=${encodeURIComponent(email)}` : ""}`),
   requestReturn: (orderId, data) => post(`/api/orders/${orderId}/request-return`, data),
+
   // ── Announcements ──────────────────────────────────────────────
   getAnnouncements:   ()         => get("/api/announcements"),
   createAnnouncement: (data)     => post("/api/announcements",      data),
@@ -156,6 +157,20 @@ export const api = {
   // ── Gifts ──────────────────────────────────────────────────────
   getGiftForHer: () => get("/api/gifts/gift-for-her"),
   getGiftForHim: () => get("/api/gifts/gift-for-him"),
+
+  // ✅ CHATBOT API ENDPOINTS ──────────────────────────────────────
+  startChat: () => post("/api/chat/start", {}),
+  
+  sendChatMessage: (conversationId, message) =>
+    post("/api/chat/message", { conversationId, message }),
+  
+  getChat: (conversationId) => get(`/api/chat/${conversationId}`),
+  
+  getChats: () => get("/api/chat"),
+  
+  deleteChat: (conversationId) => del(`/api/chat/${conversationId}`),
+  
+  getChatInsights: (conversationId) => get(`/api/chat/${conversationId}/insights`),
 };
 
 /* ── Image URL resolver ───────────────────────────────────────────── */

@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getProductImage } from "../services/api";
-import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { useToast } from "../context/ToastProvider";
-
+import { useSmartAddToCart } from "../hooks/useSmartAddToCart";
 
 const THEME = {
   bg: "#faf8f5",
@@ -25,15 +24,15 @@ const THEME = {
 // ── Product Card Component ────────────────────────────────────────────
 export default function ProductCard({ product }) {
   const navigate = useNavigate();
-  const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
-  const { success, error: showError } = useToast();
+  const { error: showError, success } = useToast();
+  const { handleSmartAddToCart } = useSmartAddToCart();
 
   const [hovered, setHovered] = useState(false);
   const [cartState, setCartState] = useState("idle"); // "idle" | "loading" | "added" | "error"
   const [imgError, setImgError] = useState(false);
   const [wishLoading, setWishLoading] = useState(false);
-  
+
   // Check if product is in wishlist
   const inWishlist = isInWishlist(product?._id || product?.id);
 
@@ -50,7 +49,7 @@ export default function ProductCard({ product }) {
       ? Math.round(((originalPrice - price) / originalPrice) * 100)
       : 0;
 
-  // ── Add to Cart handler ───────────────────────────────────────
+  // ── Smart Add to Cart handler ─────────────────────────────────────
   const handleCart = async (e) => {
     e.stopPropagation();
 
@@ -64,11 +63,8 @@ export default function ProductCard({ product }) {
     setCartState("loading");
 
     try {
-      // Pass the full product object to preserve all details in cart
-      await addToCart(product, 1);
-
+      await handleSmartAddToCart(product, 1);
       setCartState("added");
-      success("Added to cart!");
       setTimeout(() => setCartState("idle"), 2500);
     } catch (err) {
       console.error("❌ Add to cart error:", err);
@@ -78,7 +74,7 @@ export default function ProductCard({ product }) {
     }
   };
 
-  // ── Wishlist handler ──────────────────────────────────────────
+  // ── Wishlist handler ──────────────────────────────────────────────
   const handleWish = async (e) => {
     e.stopPropagation();
 
@@ -91,7 +87,6 @@ export default function ProductCard({ product }) {
     setWishLoading(true);
 
     try {
-      // Pass full product object for better state management
       await toggleWishlist(product);
       success(inWishlist ? "Removed from wishlist" : "Added to wishlist");
     } catch (err) {
@@ -102,7 +97,7 @@ export default function ProductCard({ product }) {
     }
   };
 
-  // ── Button states ──────────────────────────────────────────────
+  // ── Button states ──────────────────────────────────────────────────
   const btnConfig = {
     idle: {
       label: "Add to Cart",
@@ -212,14 +207,7 @@ export default function ProductCard({ product }) {
               background: `linear-gradient(135deg, ${THEME.blush}, ${THEME.lavender})`,
             }}
           >
-            <span
-              style={{
-                color: `rgba(232,180,196,0.3)`,
-                fontSize: 48,
-              }}
-            >
-              ◇
-            </span>
+            <span style={{ color: `rgba(232,180,196,0.3)`, fontSize: 48 }}>◇</span>
             <span
               style={{
                 color: THEME.textMuted,
@@ -341,12 +329,10 @@ export default function ProductCard({ product }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            opacity: wishLoading ? 0.6 : (hovered ? 1 : 0.9),
+            opacity: wishLoading ? 0.6 : hovered ? 1 : 0.9,
             transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
             zIndex: 2,
-            boxShadow: inWishlist
-              ? `0 4px 12px rgba(232,180,196,0.35)`
-              : "none",
+            boxShadow: inWishlist ? `0 4px 12px rgba(232,180,196,0.35)` : "none",
           }}
           onMouseEnter={(e) => {
             if (!inWishlist && !wishLoading) {
@@ -363,17 +349,12 @@ export default function ProductCard({ product }) {
             }
           }}
         >
-          {wishLoading ? "..." : (inWishlist ? "♥" : "♡")}
+          {wishLoading ? "..." : inWishlist ? "♥" : "♡"}
         </button>
       </div>
 
       {/* ── Product Info Section ── */}
-      <div
-        style={{
-          padding: "16px 14px 18px",
-          background: THEME.surface,
-        }}
-      >
+      <div style={{ padding: "16px 14px 18px", background: THEME.surface }}>
         {/* Product Name */}
         <div
           style={{
@@ -395,15 +376,7 @@ export default function ProductCard({ product }) {
         </div>
 
         {/* Pricing Row */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          {/* Current Price */}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <span
             style={{
               color: THEME.burgundy,
@@ -416,7 +389,6 @@ export default function ProductCard({ product }) {
             ₹{Number(price).toLocaleString("en-IN")}
           </span>
 
-          {/* Original Price (if on sale) */}
           {originalPrice && originalPrice > price && (
             <span
               style={{
@@ -433,7 +405,7 @@ export default function ProductCard({ product }) {
           )}
         </div>
 
-        {/* Rating/Stock indicator (Optional) */}
+        {/* Stock indicator */}
         {product?.stock !== undefined && (
           <div
             style={{
